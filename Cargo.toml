@@ -1,0 +1,9 @@
+[workspace]
+resolver = "3"
+members = ["crates/alumina-datetime", "crates/alumina-demo", "crates/alumina-markdown"]
+
+[workspace.package]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/sapphire-turtle/alumina"
+edition = "2024"
+

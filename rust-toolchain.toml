@@ -1,0 +1,4 @@
+# The same toolchain every sapphire-turtle repository pins (see corundum-framework).
+[toolchain]
+channel = "1.99.0"
+components = ["clippy", "rustfmt"]
