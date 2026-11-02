@@ -1,8 +1,15 @@
 [package]
 name = "alumina-datetime"
 version = "0.1.0"
+description = "egui widgets for picking dates, periods, times and timestamps"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
 [dependencies]
+chrono = { workspace = true }
+egui = { workspace = true }
+
+[dev-dependencies]
+egui = { version = "0.37", features = ["default_fonts"] }
+egui_kittest = { version = "0.37", features = ["wgpu", "snapshot"] }
