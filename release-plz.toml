@@ -1,0 +1,21 @@
+[workspace]
+# Each library keeps its own version, changelog, tag (`<crate>-v<version>`) and GitHub
+# release: an app takes the widgets it uses, and a break in one must not bump another.
+changelog_update = true
+dependencies_update = true
+publish = true
+release = true
+git_release_enable = true
+git_tag_enable = true
+# Publish only when a release PR is merged, not on every push to main that carries an
+# unpublished version.
+release_always = false
+pr_branch_prefix = "release-plz/"
+pr_labels = ["release"]
+
+[[package]]
+name = "alumina-datetime"
+changelog_path = "crates/alumina-datetime/CHANGELOG.md"
+
+# alumina-markdown is not released until its editor is (#1): `publish = false` in its
+# Cargo.toml keeps release-plz off it. The demo app is never released, for the same flag.

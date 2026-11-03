@@ -490,7 +490,7 @@ impl Widget for DateTimePicker<'_> {
             config,
         } = self;
         let mut changed = false;
-        let inner = ui.horizontal_top(|ui| {
+        let mut body = |ui: &mut Ui, side_by_side: bool| {
             let r = Calendar::new((id_salt, "cal"), state)
                 .selection(Some(Period::Day(datetime.date())))
                 .config(config.clone())
@@ -502,7 +502,9 @@ impl Widget for DateTimePicker<'_> {
             ui.separator();
             ui.vertical(|ui| {
                 let mut time = datetime.time();
-                ui.add_space(config.cell_size);
+                if side_by_side {
+                    ui.add_space(config.cell_size);
+                }
                 if ui
                     .add(format.drum((id_salt, "drum"), &mut time, &config))
                     .changed()
@@ -511,13 +513,28 @@ impl Widget for DateTimePicker<'_> {
                     changed = true;
                 }
             });
-        });
+        };
+        // Side by side where they fit; on a phone's narrow screen the drums go under the
+        // calendar.
+        let inner = if ui.available_width() >= side_by_side_width(&config, &format) {
+            ui.horizontal_top(|ui| body(ui, true))
+        } else {
+            ui.vertical(|ui| body(ui, false))
+        };
         let mut response = inner.response;
         if changed {
             response.mark_changed();
         }
         response
     }
+}
+
+/// About the width of a calendar beside time drums.
+fn side_by_side_width(config: &CalendarConfig, format: &TimeFormat) -> f32 {
+    let cols = 7.0 + f32::from(u8::from(config.show_week_numbers));
+    let calendar = cols * (config.cell_size + 2.0);
+    let drums = 2 + usize::from(format.seconds) + usize::from(format.hour12);
+    calendar + drums as f32 * 54.0 + 24.0
 }
 
 /// A button reading a timestamp; it opens [`DateTimePicker`] and a text field to set it.

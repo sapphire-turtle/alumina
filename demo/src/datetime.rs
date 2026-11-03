@@ -10,7 +10,7 @@ use alumina_datetime::{
     DateTimePickerButton, Drum, Labels, Period, PeriodKind, PeriodPickerButton, TimeDrum,
     TimeFormat, TimePickerButton,
 };
-use eframe::egui;
+use corundum_framework_gui::egui;
 
 pub struct DateTimeDemo {
     // Shared settings.
@@ -118,18 +118,37 @@ impl DateTimeDemo {
     }
 
     pub fn ui(&mut self, ui: &mut egui::Ui) {
-        egui::Panel::left("datetime_settings")
-            .resizable(false)
-            .show(ui, |ui| self.settings(ui));
+        let narrow = ui.available_width() < crate::NARROW;
+        if !narrow {
+            egui::Panel::left("datetime_settings")
+                .resizable(false)
+                .show(ui, |ui| {
+                    ui.heading("Settings");
+                    self.settings(ui);
+                });
+        }
         egui::CentralPanel::default().show(ui, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
+                if narrow {
+                    // On a phone the settings fold away above the widgets.
+                    egui::CollapsingHeader::new("Settings")
+                        .id_salt("datetime_settings_narrow")
+                        .show(ui, |ui| self.settings(ui));
+                    ui.separator();
+                }
                 self.buttons(ui);
                 ui.separator();
-                ui.horizontal_top(|ui| {
+                if narrow {
                     self.calendar(ui);
                     ui.separator();
                     self.drums(ui);
-                });
+                } else {
+                    ui.horizontal_top(|ui| {
+                        self.calendar(ui);
+                        ui.separator();
+                        self.drums(ui);
+                    });
+                }
                 ui.separator();
                 self.datetime(ui);
             });
@@ -137,7 +156,6 @@ impl DateTimeDemo {
     }
 
     fn settings(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Settings");
         ui.checkbox(&mut self.japanese, "日本語の表示");
         ui.horizontal(|ui| {
             ui.label("Week starts on");

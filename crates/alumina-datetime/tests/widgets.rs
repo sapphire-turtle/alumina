@@ -3,10 +3,10 @@
 //! With `ALUMINA_RENDER_DIR` set, each test also renders its window there as a PNG (on the
 //! GPU, or a software Vulkan such as lavapipe), for looking at.
 
-use alumina_datetime::chrono::{NaiveDate, NaiveTime};
+use alumina_datetime::chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 use alumina_datetime::{
-    Calendar, CalendarConfig, CalendarState, CalendarView, DatePickerButton, Drum, Period,
-    PeriodKind, PeriodPickerButton, TimeDrum,
+    Calendar, CalendarConfig, CalendarState, CalendarView, DatePickerButton, DateTimePicker, Drum,
+    Period, PeriodKind, PeriodPickerButton, TimeDrum,
 };
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable as _;
@@ -234,4 +234,26 @@ fn period_button_takes_typed_text() {
     h.run();
     assert_eq!(*h.state(), Some("2026-W40".parse().unwrap()));
     render(&mut h, "period_popup");
+}
+
+#[test]
+fn datetime_picker_stacks_on_a_narrow_screen() {
+    let at = d(2026, 11, 3).and_hms_opt(9, 30, 0).unwrap();
+    for (width, name) in [(600.0, "datetime_wide"), (300.0, "datetime_narrow")] {
+        let mut h = Harness::builder().with_size([width, 520.0]).build_ui_state(
+            |ui, (dt, state): &mut (NaiveDateTime, CalendarState)| {
+                ui.add(DateTimePicker::new("dt", dt, state).config(config()));
+            },
+            (at, CalendarState::new(at.date())),
+        );
+        h.run();
+        let day = h.get_by_label("2026-11-03").rect();
+        let minute = h.get_by_label("30").rect();
+        if width > 400.0 {
+            assert!(minute.left() > day.right(), "the drums beside the calendar");
+        } else {
+            assert!(minute.top() > day.bottom(), "the drums under the calendar");
+        }
+        render(&mut h, name);
+    }
 }
