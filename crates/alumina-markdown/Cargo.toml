@@ -1,8 +1,11 @@
 [package]
 name = "alumina-markdown"
 version = "0.1.0"
+description = "A Markdown editor for egui that formats as you type"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+# Not released until the editor is (#1).
+publish = false
 
 [dependencies]
