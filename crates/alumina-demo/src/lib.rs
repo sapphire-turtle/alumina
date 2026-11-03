@@ -33,6 +33,18 @@ impl Default for Demo {
 
 impl corundum_framework_gui::eframe::App for Demo {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut corundum_framework_gui::eframe::Frame) {
+        // Clear of a phone's notch, status bar and home indicator: iOS reports them as egui's
+        // safe area (on Android corundum's window keeps the app clear of them itself). The
+        // strips outside get the panels' colour.
+        ui.painter()
+            .rect_filled(ui.max_rect(), 0.0, ui.visuals().panel_fill);
+        let safe = ui.max_rect() - ui.input(|i| i.safe_area_insets());
+        ui.scope_builder(egui::UiBuilder::new().max_rect(safe), |ui| self.pages(ui));
+    }
+}
+
+impl Demo {
+    fn pages(&mut self, ui: &mut egui::Ui) {
         egui::Panel::top("pages").show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.selectable_value(&mut self.page, Page::DateTime, "Date & time");
