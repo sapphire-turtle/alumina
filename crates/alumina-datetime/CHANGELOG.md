@@ -1,0 +1,20 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+## [0.1.0](https://github.com/sapphire-turtle/alumina/releases/tag/alumina-datetime-v0.1.0) - 2026-11-03
+
+### Added
+
+- *(alumina-datetime)* DateTimePicker puts the drums under the calendar when narrow
+- *(alumina-datetime)* a calendar, time drums and picker buttons ([#7](https://github.com/sapphire-turtle/alumina/pull/7))
+
+### Other
+
+- *(alumina-datetime)* a README and the crates.io metadata
+- the workspace: alumina-datetime, alumina-markdown and alumina-demo
