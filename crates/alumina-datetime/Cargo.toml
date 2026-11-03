@@ -1,15 +1,19 @@
 [package]
 name = "alumina-datetime"
 version = "0.1.0"
-description = "egui widgets for picking dates, periods, times and timestamps"
+description = "egui widgets for picking dates, periods, times and timestamps: a calendar, time drums and picker buttons"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+readme = "README.md"
+keywords = ["egui", "calendar", "date-picker", "time-picker", "gui"]
+categories = ["gui", "date-and-time"]
 
 [dependencies]
 chrono = { workspace = true }
 egui = { workspace = true }
 
 [dev-dependencies]
-egui = { version = "0.37", features = ["default_fonts"] }
+# egui's own fonts, for the tests' windows, which have no system's.
+egui = { workspace = true, features = ["default_fonts"] }
 egui_kittest = { version = "0.37", features = ["wgpu", "snapshot"] }
