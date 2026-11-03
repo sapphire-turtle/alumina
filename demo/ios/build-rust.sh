@@ -5,7 +5,7 @@ set -euo pipefail
 
 # Resolve everything from this script's location, not the caller's cwd.
 here="$(cd "$(dirname "$0")" && pwd)"
-workspace="$(cd "$here/../../.." && pwd)"
+workspace="$(cd "$here/../.." && pwd)"
 # An explicit target dir overrides any CARGO_TARGET_DIR in Xcode's environment, so the
 # output path below is known.
 target_dir="$workspace/target"

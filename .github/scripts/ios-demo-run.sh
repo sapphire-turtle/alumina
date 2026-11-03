@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Installs the demo app built in crates/alumina-demo/ios on the booted simulator $SIM_UDID, launches it and
+# Installs the demo app built in demo/ios on the booted simulator $SIM_UDID, launches it and
 # checks it is still running 20 seconds later. Leaves a screenshot and the app's console in
 # demo/ios/ for the workflow to upload.
 set -euo pipefail
-cd "$(dirname "$0")/../../crates/alumina-demo/ios"
+cd "$(dirname "$0")/../../demo/ios"
 
 app=build/Build/Products/Debug-iphonesimulator/AluminaDemo.app
 bundle_id=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Info.plist")

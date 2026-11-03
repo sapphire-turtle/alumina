@@ -8,7 +8,7 @@ any egui app can use them. They depend on egui, not on corundum or a window.
 |---|---|---|
 | [`alumina-datetime`](crates/alumina-datetime) | A calendar (a day, a week, a month, a year or a range), time drums, a timestamp picker, and buttons that open them in a popup | 0.1 |
 | [`alumina-markdown`](crates/alumina-markdown) | A Markdown editor that formats as you type, with shortcuts, a toolbar and list completion (#1) | planned |
-| [`alumina-demo`](crates/alumina-demo) | An app to try them all, on the desktops, iOS and Android | not released |
+| [`alumina-demo`](demo) | An app to try them all, on the desktops, iOS and Android | not released |
 
 ## Trying them
 
@@ -16,8 +16,8 @@ any egui app can use them. They depend on egui, not on corundum or a window.
 cargo run -p alumina-demo
 ```
 
-[`crates/alumina-demo/README.md`](crates/alumina-demo/README.md) has the iOS simulator and
-the Android emulator.
+[`demo/README.md`](demo/README.md) has the iOS simulator, the Android emulator and real
+phones.
 
 ## Development
 

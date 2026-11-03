@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Installs the demo's APK (crates/alumina-demo/android) on the running emulator, starts it and checks it is
-# still running 20 seconds later. Leaves a screenshot and the logcat in crates/alumina-demo/android/ for the
+# Installs the demo's APK (demo/android) on the running emulator, starts it and checks it is
+# still running 20 seconds later. Leaves a screenshot and the logcat in demo/android/ for the
 # workflow to upload.
 set -euo pipefail
-cd "$(dirname "$0")/../../crates/alumina-demo/android"
+cd "$(dirname "$0")/../../demo/android"
 
 package=org.sapphire_turtle.alumina_demo
 adb install -r app/build/outputs/apk/debug/app-debug.apk

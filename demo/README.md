@@ -29,7 +29,7 @@ and the iOS targets:
 
 ```sh
 rustup target add aarch64-apple-ios aarch64-apple-ios-sim
-cd crates/alumina-demo/ios
+cd demo/ios
 xcodegen generate
 open AluminaDemo.xcodeproj   # pick a simulator and Run
 ```
@@ -64,7 +64,7 @@ Mode on (Settings → Privacy & Security, shown once Xcode has seen it).
 Set your team, once:
 
 ```sh
-cd crates/alumina-demo/ios
+cd demo/ios
 cp Local.xcconfig.example Local.xcconfig
 # DEVELOPMENT_TEAM = your team ID (Xcode → Settings → Accounts, or developer.apple.com)
 # and PRODUCT_BUNDLE_IDENTIFIER = an id of your own, if the demo's is taken by another team
@@ -91,16 +91,16 @@ Needs the Android SDK with an NDK (`ANDROID_NDK_HOME`),
 ```sh
 rustup target add aarch64-linux-android x86_64-linux-android
 cargo install cargo-ndk
-crates/alumina-demo/android/build-rust.sh     # arm64-v8a and x86_64; ABIS=x86_64 for one
-gradle -p crates/alumina-demo/android assembleDebug
-adb install -r crates/alumina-demo/android/app/build/outputs/apk/debug/app-debug.apk
+demo/android/build-rust.sh     # arm64-v8a and x86_64; ABIS=x86_64 for one
+gradle -p demo/android assembleDebug
+adb install -r demo/android/app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -n org.sapphire_turtle.alumina_demo/.MainActivity
 adb logcat -s alumina-demo
 ```
 
 `build-rust.sh` builds the cdylib and puts it in `app/src/main/jniLibs`; the app is
 GameActivity (`MainActivity`), loading it and calling its `android_main`. Open
-`crates/alumina-demo/android` in Android Studio to run it from there instead.
+`demo/android` in Android Studio to run it from there instead.
 
 A debug build runs because the workspace's `Cargo.toml` builds android-activity without
 debug assertions (`[profile.dev.package.android-activity]`): android-activity 0.6 makes a
@@ -114,8 +114,8 @@ allowed, so that `adb devices` lists it. Wireless debugging works too
 (`adb pair`, then `adb connect`).
 
 ```sh
-crates/alumina-demo/android/run-device.sh                     # the only device adb sees
-ANDROID_SERIAL=<serial> crates/alumina-demo/android/run-device.sh
+demo/android/run-device.sh                     # the only device adb sees
+ANDROID_SERIAL=<serial> demo/android/run-device.sh
 ```
 
 It builds the arm64-v8a library only (`ABIS` overrides), the APK, installs and starts it,

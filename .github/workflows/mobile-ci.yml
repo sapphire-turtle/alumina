@@ -4,7 +4,7 @@ name: Mobile CI
 # are built for iOS and Android on every pull request that touches them.
 #
 # Clippy for the phones, then the libraries' tests on an iOS simulator and an Android
-# emulator. Then the demo app (crates/alumina-demo) is built, started on the same simulator
+# emulator. Then the demo app (demo/) is built, started on the same simulator
 # and emulator, and left running for 20 seconds; its screenshot is uploaded for a look.
 #
 # Not a required check: with the path filter it does not run on pull requests that touch
@@ -14,6 +14,7 @@ on:
     # Cargo.lock too: a dependency bump (egui, corundum) can break a mobile build.
     paths:
       - crates/**
+      - demo/**
       - Cargo.toml
       - Cargo.lock
       - rust-toolchain.toml
@@ -25,7 +26,7 @@ defaults:
     shell: bash
 
 env:
-  DEMO: crates/alumina-demo
+  DEMO: demo
 
 jobs:
   ios:

@@ -5,7 +5,7 @@
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
-workspace="$(cd "$here/../../.." && pwd)"
+workspace="$(cd "$here/../.." && pwd)"
 
 targets=()
 for abi in ${ABIS:-arm64-v8a x86_64}; do

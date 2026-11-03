@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/alumina-datetime", "crates/alumina-demo", "crates/alumina-markdown"]
+members = ["crates/alumina-datetime", "demo", "crates/alumina-markdown"]
 
 [workspace.package]
 license = "MIT OR Apache-2.0"
