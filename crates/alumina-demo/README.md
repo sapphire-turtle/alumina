@@ -39,15 +39,49 @@ Or from the command line:
 ```sh
 xcodebuild -project AluminaDemo.xcodeproj -scheme AluminaDemo -sdk iphonesimulator \
   -configuration Debug -derivedDataPath build build
-xcrun simctl boot "iPhone 16 Pro"
+xcrun simctl list devices available            # pick one; names repeat across iOS versions
+xcrun simctl boot <UDID>
+open /Applications/Xcode.app/Contents/Applications/DeviceHub.app   # the screen
 xcrun simctl install booted build/Build/Products/Debug-iphonesimulator/AluminaDemo.app
 xcrun simctl launch --console-pty booted org.sapphire-turtle.alumina-demo
 ```
 
+`simctl boot` starts the simulator without a window: open DeviceHub (Xcode 27; Simulator.app,
+`open -a Simulator`, before it) to see it, or take a screenshot with
+`xcrun simctl io booted screenshot shot.png`.
+
 The project's pre-build script (`build-rust.sh`) builds the demo's staticlib for the SDK
-Xcode targets; `Sources/main.m` hands the main thread to it. For a real device, copy
-`Local.xcconfig.example` to `Local.xcconfig` and set your `DEVELOPMENT_TEAM` (and a bundle
-id of your own).
+Xcode targets; `Sources/main.m` hands the main thread to it.
+
+## iOS device
+
+A mouse on a simulator does not tell how a drag, a flick or a scroll feels under a finger;
+try those on a phone (see [Trying it by hand](#trying-it-by-hand)). Needs a paid or free
+Apple developer account signed in to Xcode (Settings → Accounts), and the device paired
+with the Mac (connect it by cable once, trust the Mac; Wi-Fi works after) with Developer
+Mode on (Settings → Privacy & Security, shown once Xcode has seen it).
+
+Set your team, once:
+
+```sh
+cd crates/alumina-demo/ios
+cp Local.xcconfig.example Local.xcconfig
+# DEVELOPMENT_TEAM = your team ID (Xcode → Settings → Accounts, or developer.apple.com)
+# and PRODUCT_BUNDLE_IDENTIFIER = an id of your own, if the demo's is taken by another team
+```
+
+Then build, install and launch it, its log following until Ctrl-C:
+
+```sh
+./run-device.sh                          # the first paired device
+DEVICE=<name or UDID> ./run-device.sh    # one of several (xcrun devicectl list devices)
+CONFIGURATION=Release ./run-device.sh    # how smooth it is without the debug build
+```
+
+The first launch can fail as "untrusted developer" with a free account: trust it in
+Settings → General → VPN & Device Management and run it again. In Xcode instead: open
+`AluminaDemo.xcodeproj`, pick the device and Run (it signs with the team in
+`Local.xcconfig`).
 
 ## Android emulator
 
@@ -71,6 +105,42 @@ GameActivity (`MainActivity`), loading it and calling its `android_main`. Open
 A debug build runs because the workspace's `Cargo.toml` builds android-activity without
 debug assertions (`[profile.dev.package.android-activity]`): android-activity 0.6 makes a
 slice of the keyboard's text from a null pointer before there is any, and the check aborts.
+
+## Android device
+
+As for the emulator, with the phone in USB debugging (Settings → About phone → tap the
+build number seven times; then Developer options → USB debugging) and this computer
+allowed, so that `adb devices` lists it. Wireless debugging works too
+(`adb pair`, then `adb connect`).
+
+```sh
+crates/alumina-demo/android/run-device.sh                     # the only device adb sees
+ANDROID_SERIAL=<serial> crates/alumina-demo/android/run-device.sh
+```
+
+It builds the arm64-v8a library only (`ABIS` overrides), the APK, installs and starts it,
+and follows its log until Ctrl-C.
+
+## Trying it by hand
+
+What a simulator's mouse cannot tell; on a device, with a finger:
+
+- **The page's scroll**: drag the page up and down, flick it; it should follow the finger
+  and keep going after a flick, and stop when touched.
+- **The drums**: drag one, flick one (it keeps rolling and settles on a row), tap a row
+  away from the middle (it rolls there). A drag that starts on a drum rolls the drum, not
+  the page; one that starts beside it scrolls the page.
+- **The calendar**: tap days, a range's two ends, the arrows, the heading (zooms out to
+  the months and the years) and a month or a year (zooms back in). The cells should be big
+  enough for a finger at the default size.
+- **The picker buttons**: each opens its popup; a tap outside closes it. The text in the
+  button takes the keyboard's input, and the page stays clear of the keyboard.
+- **Turning the phone** (iPhone landscape, iPad every way): the page keeps clear of the
+  notch or the island, the home indicator and the system bars.
+- **iPad with a trackpad or a mouse**: two-finger scroll over the page and over a drum,
+  where the drum takes it.
+- **Dark and light**: the switch at the top right, and the system's setting with the third
+  button.
 
 ## CI
 
