@@ -1,13 +1,36 @@
 [package]
 name = "alumina-demo"
-version = "0.1.0"
-description = "A demo app for trying alumina's widgets"
+version = "0.0.0"
+description = "A demo app for trying alumina's widgets on each OS"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 publish = false
 
+# One app for every OS. The lib holds it; each OS starts it its own way:
+#
+# - the desktops: the `alumina-demo` binary (src/main.rs);
+# - iOS: the staticlib, linked into the Xcode app in ios/ (`alumina_demo_main`);
+# - Android: the cdylib, loaded by GameActivity in android/ (`android_main`).
+[lib]
+name = "alumina_demo"
+crate-type = ["rlib", "staticlib", "cdylib"]
+
+[[bin]]
+name = "alumina-demo"
+path = "src/main.rs"
+
 [dependencies]
 alumina-datetime = { workspace = true }
-chrono = { workspace = true }
-eframe = { workspace = true }
+tracing = { workspace = true }
+
+# The window is corundum's, as in the apps: on a phone it keeps the app clear of the
+# system's bars and the keyboard, feeds it the keyboard's text, and on iOS puts it in a
+# scene; everywhere it finds a CJK font for the Japanese labels. Everywhere but Android it is
+# eframe's (`window::run`); on Android GameActivity's (`window::run_android`).
+[target.'cfg(not(target_os = "android"))'.dependencies]
+corundum-framework-gui = { version = "0.7.0", default-features = false, features = ["eframe"] }
+tracing-subscriber = { workspace = true, features = ["fmt", "env-filter"] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+corundum-framework-gui = { version = "0.7.0", default-features = false, features = ["android"] }
