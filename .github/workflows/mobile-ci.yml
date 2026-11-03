@@ -1,0 +1,167 @@
+name: Mobile CI
+
+# alumina's widgets are used by apps that ship on phones (asteria from the start), so they
+# are built for iOS and Android on every pull request that touches them.
+#
+# Clippy for the phones, then the libraries' tests on an iOS simulator and an Android
+# emulator. Then the demo app (crates/alumina-demo) is built, started on the same simulator
+# and emulator, and left running for 20 seconds; its screenshot is uploaded for a look.
+#
+# Not a required check: with the path filter it does not run on pull requests that touch
+# only the docs, and a required check that never runs would leave them pending.
+on:
+  pull_request:
+    # Cargo.lock too: a dependency bump (egui, corundum) can break a mobile build.
+    paths:
+      - crates/**
+      - Cargo.toml
+      - Cargo.lock
+      - rust-toolchain.toml
+      - .github/workflows/mobile-ci.yml
+      - .github/scripts/**
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  DEMO: crates/alumina-demo
+
+jobs:
+  ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # rustup installs the rust-toolchain.toml toolchain on first use; do that in its own
+      # step so the download does not land in the middle of another.
+      - name: Install the pinned toolchain
+        run: cargo --version
+
+      - name: Add the iOS targets
+        run: rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Clippy (device and simulator)
+        run: |
+          for t in aarch64-apple-ios aarch64-apple-ios-sim; do
+            cargo clippy -p alumina-datetime -p alumina-markdown -p alumina-demo --target "$t" --all-targets --locked -- -D warnings || exit 1
+          done
+
+      - name: Test on the simulator
+        run: |
+          udid=$(xcrun simctl list devices available --json \
+            | jq -r '[.devices[][] | select(.name | startswith("iPhone"))][0].udid')
+          xcrun simctl bootstatus "$udid" -b
+          echo "SIM_UDID=$udid" >> "$GITHUB_ENV"
+          export CARGO_TARGET_AARCH64_APPLE_IOS_SIM_RUNNER="xcrun simctl spawn $udid"
+          cargo test -p alumina-datetime -p alumina-markdown --lib --target aarch64-apple-ios-sim --locked
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      # The Xcode project's pre-build script builds the demo's staticlib (ios/build-rust.sh).
+      - name: Build the demo for the simulator
+        working-directory: ${{ env.DEMO }}/ios
+        run: |
+          set -o pipefail
+          xcodegen generate
+          xcodebuild -project AluminaDemo.xcodeproj -scheme AluminaDemo \
+            -sdk iphonesimulator -configuration Debug -derivedDataPath build \
+            CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=NO build 2>&1 \
+            | tee xcodebuild.log | tail -n 100
+
+      - name: Run the demo on the simulator
+        run: .github/scripts/ios-demo-run.sh
+
+      - name: Upload the demo's screenshot and console
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: demo-ios
+          path: |
+            ${{ env.DEMO }}/ios/screenshot.png
+            ${{ env.DEMO }}/ios/console.log
+            ${{ env.DEMO }}/ios/console-stderr.log
+            ${{ env.DEMO }}/ios/xcodebuild.log
+          if-no-files-found: warn
+
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install the pinned toolchain
+        run: cargo --version
+
+      - name: Add the Android targets
+        run: rustup target add aarch64-linux-android x86_64-linux-android
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --locked
+
+      # The runner has an NDK preinstalled; ANDROID_NDK_LATEST_HOME points at it.
+      - name: Clippy (arm64 phones and x86_64 emulators)
+        run: |
+          export ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME"
+          cargo ndk -t arm64-v8a -t x86_64 clippy -p alumina-datetime -p alumina-markdown -p alumina-demo --all-targets --locked -- -D warnings
+
+      # Built before the emulator starts, so the emulator step only runs them.
+      - name: Build the tests
+        run: |
+          export ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME"
+          cargo ndk -t x86_64 test -p alumina-datetime -p alumina-markdown --lib --no-run --locked
+
+      # The demo's APK: its cdylib for the x86_64 emulator, packed by Gradle with GameActivity.
+      - name: Build the demo's library
+        run: |
+          export ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME"
+          ABIS=x86_64 "$DEMO/android/build-rust.sh" --locked
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v5
+        with:
+          gradle-version: "8.14.3"
+
+      - name: Build the demo's APK
+        run: gradle -p "$DEMO/android" assembleDebug
+
+      # The emulator needs hardware acceleration, which the runner allows once /dev/kvm is
+      # opened up to its user.
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Test on the emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          CARGO_TARGET_X86_64_LINUX_ANDROID_RUNNER: ${{ github.workspace }}/.github/scripts/android-test-runner.sh
+        with:
+          api-level: 36
+          arch: x86_64
+          target: default
+          emulator-options: -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect
+          disable-animations: true
+          script: |
+            ANDROID_NDK_HOME=$ANDROID_NDK_LATEST_HOME cargo ndk -t x86_64 test -p alumina-datetime -p alumina-markdown --lib --locked
+            .github/scripts/android-demo-run.sh
+
+      - name: Upload the demo's screenshot and log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: demo-android
+          path: |
+            ${{ env.DEMO }}/android/screenshot.png
+            ${{ env.DEMO }}/android/logcat.txt
+          if-no-files-found: warn

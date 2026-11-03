@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  pull_request:
+
+jobs:
+  ci:
+    uses: sapphire-turtle/.github/.github/workflows/rust-ci.yml@v1
+    with:
+      # eframe's windowing (the demo's window) needs these to build on Linux.
+      linux-packages: libwayland-dev libxkbcommon-dev
+      post-test: |
+        # The libraries publish on their own, as crates.io builds them (the crates with
+        # `publish = false`, the demo and the unreleased markdown editor, are skipped).
+        cargo publish --workspace --dry-run --locked
+        # The demo's binary links on each desktop (the tests link only its lib).
+        cargo build -p alumina-demo --bin alumina-demo --locked
+
+  # The widget crates are for any egui app, with or without a window: none of them may
+  # bring eframe or corundum (only the demo does).
+  libraries-without-a-window:
+    needs: ci
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: eframe and corundum are not built for the libraries
+        run: |
+          for p in alumina-datetime alumina-markdown; do
+            # Each tree goes to a file first, so a failing cargo fails the job rather than
+            # passing as an empty tree.
+            cargo tree --locked --target all -p "$p" -e normal > tree.txt
+            if grep -qE ' (eframe|corundum-framework[a-z-]*) v' tree.txt; then
+              echo "a window or corundum is built for $p"
+              exit 1
+            fi
+          done
