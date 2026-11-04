@@ -5,14 +5,14 @@
 
 use std::ops::Range;
 
-use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
+use pulldown_cmark::{CodeBlockKind, Event, LinkType, Options, Parser, Tag, TagEnd};
 
 /// A parsed source: its blocks and inlines, in source order.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Doc {
     /// Nested blocks come after their parent.
     pub blocks: Vec<Block>,
-    /// Not read yet.
+    /// Nested inlines come after their parent.
     pub inlines: Vec<Inline>,
 }
 
@@ -78,6 +78,9 @@ pub fn parse(source: &str) -> Doc {
     let options = Options::ENABLE_STRIKETHROUGH | Options::ENABLE_TASKLISTS;
     let mut doc = Doc::default();
     let mut stack: Vec<Container> = Vec::new();
+    // Open inlines: their index in `doc.inlines` and the span of what is inside.
+    let mut autolinks: Vec<bool> = Vec::new();
+    let mut open: Vec<(usize, Option<Range<usize>>)> = Vec::new();
     for (event, range) in Parser::new_ext(source, options).into_offset_iter() {
         match event {
             Event::Start(tag) => match tag {
@@ -143,8 +146,43 @@ pub fn parse(source: &str) -> Doc {
                     };
                     push(&mut doc, BlockKind::CodeBlock { info }, range, marks);
                 }
+                Tag::Emphasis => open_inline(&mut doc, &mut open, InlineKind::Emphasis, range),
+                Tag::Strong => open_inline(&mut doc, &mut open, InlineKind::Strong, range),
+                Tag::Strikethrough => {
+                    open_inline(&mut doc, &mut open, InlineKind::Strikethrough, range);
+                }
+                Tag::Link {
+                    link_type,
+                    dest_url,
+                    ..
+                } => {
+                    let kind = InlineKind::Link {
+                        url: dest_url.to_string(),
+                        text: range.start..range.start,
+                    };
+                    open_inline(&mut doc, &mut open, kind, range);
+                    // Keep the link type to tell `<url>` from `[text](url)`.
+                    autolinks.push(matches!(link_type, LinkType::Autolink | LinkType::Email));
+                }
                 _ => {}
             },
+            Event::End(TagEnd::Emphasis | TagEnd::Strong | TagEnd::Strikethrough) => {
+                close_inline(source, &mut doc, &mut open, None);
+            }
+            Event::End(TagEnd::Link) => {
+                let auto = autolinks.pop().unwrap_or(false);
+                close_inline(source, &mut doc, &mut open, Some(auto));
+            }
+            Event::Code(_) => {
+                let marks = code_marks(source, &range);
+                doc.inlines.push(Inline {
+                    kind: InlineKind::Code,
+                    range: range.clone(),
+                    marks,
+                });
+                grow(&mut open, &range);
+            }
+            Event::Text(_) | Event::SoftBreak | Event::HardBreak => grow(&mut open, &range),
             Event::End(TagEnd::BlockQuote(_) | TagEnd::List(_)) => {
                 stack.pop();
             }
@@ -174,6 +212,107 @@ pub fn parse(source: &str) -> Doc {
         }
     }
     doc
+}
+
+fn open_inline(
+    doc: &mut Doc,
+    open: &mut Vec<(usize, Option<Range<usize>>)>,
+    kind: InlineKind,
+    range: Range<usize>,
+) {
+    open.push((doc.inlines.len(), None));
+    doc.inlines.push(Inline {
+        kind,
+        range,
+        marks: Vec::new(),
+    });
+}
+
+/// Widens every open inline's content span to `range`.
+fn grow(open: &mut [(usize, Option<Range<usize>>)], range: &Range<usize>) {
+    for (_, span) in open {
+        *span = Some(match span.take() {
+            Some(s) => s.start.min(range.start)..s.end.max(range.end),
+            None => range.clone(),
+        });
+    }
+}
+
+/// Closes the innermost open inline and locates its marks. `autolink` is `Some` for a link.
+fn close_inline(
+    source: &str,
+    doc: &mut Doc,
+    open: &mut Vec<(usize, Option<Range<usize>>)>,
+    autolink: Option<bool>,
+) {
+    let Some((index, span)) = open.pop() else {
+        return;
+    };
+    let inline = &mut doc.inlines[index];
+    let range = inline.range.clone();
+    match (&mut inline.kind, autolink) {
+        (InlineKind::Link { text, .. }, Some(auto)) => {
+            let content = span.unwrap_or(range.start..range.start);
+            if auto {
+                *text = content;
+                let (open, close) = (range.start, range.end);
+                if source[range.clone()].starts_with('<') && source[range.clone()].ends_with('>') {
+                    inline.marks = vec![open..open + 1, close - 1..close];
+                }
+            } else {
+                let open_end = source[range.clone()]
+                    .starts_with('[')
+                    .then_some(range.start + 1);
+                let text_end = content.end.max(open_end.unwrap_or(range.start));
+                *text = match open_end {
+                    Some(o) => content.start.max(o).min(text_end)..text_end,
+                    None => content,
+                };
+                // The `]` after the text, then whatever closes the link.
+                let close = source[text_end..range.end].find(']').map(|i| text_end + i);
+                if let (Some(o), Some(c)) = (open_end, close) {
+                    inline.marks = vec![range.start..o, c..range.end];
+                }
+            }
+        }
+        (kind, _) => {
+            let (ch, need) = match kind {
+                InlineKind::Strikethrough => ('~', 2),
+                InlineKind::Strong => (source[range.clone()].chars().next().unwrap_or('*'), 2),
+                _ => (source[range.clone()].chars().next().unwrap_or('*'), 1),
+            };
+            inline.marks = delimiter_marks(source, &range, ch, need);
+        }
+    }
+}
+
+/// The `need` chars of `ch` at each end of `range`, fewer if the run is shorter.
+fn delimiter_marks(source: &str, range: &Range<usize>, ch: char, need: usize) -> Vec<Range<usize>> {
+    let text = &source[range.clone()];
+    let run = text.chars().take_while(|&c| c == ch).count().min(need);
+    let tail = text
+        .chars()
+        .rev()
+        .take_while(|&c| c == ch)
+        .count()
+        .min(need);
+    let n = run.min(tail);
+    // `ch` is ASCII, so a run of `n` is `n` bytes.
+    if n == 0 || text.len() < 2 * n {
+        return Vec::new();
+    }
+    vec![range.start..range.start + n, range.end - n..range.end]
+}
+
+fn code_marks(source: &str, range: &Range<usize>) -> Vec<Range<usize>> {
+    let text = &source[range.clone()];
+    let head = text.len() - text.trim_start_matches('`').len();
+    let tail = text.len() - text.trim_end_matches('`').len();
+    let n = head.min(tail);
+    if n == 0 || text.len() < 2 * n {
+        return Vec::new();
+    }
+    vec![range.start..range.start + n, range.end - n..range.end]
 }
 
 fn push(doc: &mut Doc, kind: BlockKind, range: Range<usize>, marks: Vec<Range<usize>>) {
@@ -309,6 +448,12 @@ mod tests {
     fn marks<'a>(src: &'a str, b: &Block) -> Vec<&'a str> {
         b.marks.iter().map(|m| &src[m.clone()]).collect()
     }
+
+    fn imarks<'a>(src: &'a str, i: &Inline) -> Vec<&'a str> {
+        i.marks.iter().map(|m| &src[m.clone()]).collect()
+    }
+
+    const SAMPLE: &str = include_str!("../tests/sample.md");
 
     fn kinds(doc: &Doc) -> Vec<BlockKind> {
         doc.blocks.iter().map(|b| b.kind.clone()).collect()
@@ -498,5 +643,139 @@ mod tests {
         assert_eq!(marks(src, &parse(src).blocks[0]), ["```rust", "```"]);
         let src = "Title\r\n===\r\n";
         assert_eq!(marks(src, &parse(src).blocks[0]), ["==="]);
+    }
+
+    #[test]
+    fn strong_and_emphasis() {
+        let src = "**a** *b* _c_ __d__";
+        let doc = parse(src);
+        let got: Vec<_> = doc
+            .inlines
+            .iter()
+            .map(|i| (i.kind.clone(), imarks(src, i)))
+            .collect();
+        assert_eq!(
+            got,
+            [
+                (InlineKind::Strong, vec!["**", "**"]),
+                (InlineKind::Emphasis, vec!["*", "*"]),
+                (InlineKind::Emphasis, vec!["_", "_"]),
+                (InlineKind::Strong, vec!["__", "__"]),
+            ]
+        );
+    }
+
+    #[test]
+    fn nested_emphasis() {
+        let src = "***a***";
+        let doc = parse(src);
+        assert!(doc.inlines.iter().any(|i| i.kind == InlineKind::Strong));
+        assert!(doc.inlines.iter().any(|i| i.kind == InlineKind::Emphasis));
+        let mut stars: Vec<usize> = doc
+            .inlines
+            .iter()
+            .flat_map(|i| i.marks.iter().flat_map(|m| m.clone()))
+            .collect();
+        for m in doc.inlines.iter().flat_map(|i| &i.marks) {
+            assert!(m.end <= 7);
+        }
+        stars.sort();
+        assert_eq!(stars, [0, 1, 2, 4, 5, 6]);
+    }
+
+    #[test]
+    fn strikethrough() {
+        let src = "~~a~~";
+        let doc = parse(src);
+        assert_eq!(doc.inlines.len(), 1);
+        assert_eq!(doc.inlines[0].kind, InlineKind::Strikethrough);
+        assert_eq!(imarks(src, &doc.inlines[0]), ["~~", "~~"]);
+    }
+
+    #[test]
+    fn inline_code() {
+        let src = "`` a ` b ``";
+        let doc = parse(src);
+        assert_eq!(doc.inlines.len(), 1);
+        assert_eq!(doc.inlines[0].kind, InlineKind::Code);
+        assert_eq!(imarks(src, &doc.inlines[0]), ["``", "``"]);
+    }
+
+    #[test]
+    fn link() {
+        let src = "[文字](https://e.x)";
+        let doc = parse(src);
+        assert_eq!(doc.inlines.len(), 1);
+        let InlineKind::Link { url, text } = &doc.inlines[0].kind else {
+            panic!("not a link");
+        };
+        assert_eq!(url, "https://e.x");
+        assert_eq!(&src[text.clone()], "文字");
+        assert_eq!(imarks(src, &doc.inlines[0]), ["[", "](https://e.x)"]);
+    }
+
+    #[test]
+    fn reference_link() {
+        let src = "[a][r]\n\n[r]: https://e.x\n";
+        let doc = parse(src);
+        assert_eq!(imarks(src, &doc.inlines[0]), ["[", "][r]"]);
+    }
+
+    #[test]
+    fn autolink() {
+        let src = "<https://e.x>";
+        let doc = parse(src);
+        assert_eq!(doc.inlines.len(), 1);
+        assert!(matches!(doc.inlines[0].kind, InlineKind::Link { .. }));
+        assert_eq!(imarks(src, &doc.inlines[0]), ["<", ">"]);
+    }
+
+    #[test]
+    fn nothing_inside_code_blocks() {
+        assert!(parse("```\n**a**\n```\n").inlines.is_empty());
+    }
+
+    #[test]
+    fn sample_has_every_inline() {
+        let doc = parse(SAMPLE);
+        for want in [
+            InlineKind::Emphasis,
+            InlineKind::Strong,
+            InlineKind::Strikethrough,
+            InlineKind::Code,
+        ] {
+            assert!(doc.inlines.iter().any(|i| i.kind == want), "{want:?}");
+        }
+        let links = doc
+            .inlines
+            .iter()
+            .filter(|i| matches!(i.kind, InlineKind::Link { .. }))
+            .count();
+        assert_eq!(links, 3);
+    }
+
+    #[test]
+    fn every_prefix_parses() {
+        for i in (0..=SAMPLE.len()).filter(|&i| SAMPLE.is_char_boundary(i)) {
+            let src = &SAMPLE[..i];
+            let doc = parse(src);
+            let ok = |r: &Range<usize>| {
+                r.start <= r.end
+                    && r.end <= i
+                    && src.is_char_boundary(r.start)
+                    && src.is_char_boundary(r.end)
+            };
+            for b in &doc.blocks {
+                assert!(ok(&b.range), "block {b:?} at {i}");
+                assert!(b.marks.iter().all(ok), "block marks {b:?} at {i}");
+            }
+            for n in &doc.inlines {
+                assert!(ok(&n.range), "inline {n:?} at {i}");
+                assert!(n.marks.iter().all(ok), "inline marks {n:?} at {i}");
+                if let InlineKind::Link { text, .. } = &n.kind {
+                    assert!(ok(text), "link text {n:?} at {i}");
+                }
+            }
+        }
     }
 }
