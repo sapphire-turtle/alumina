@@ -69,6 +69,20 @@ pub fn command(source: &str, selection: Range<usize>, command: Command) -> Optio
     }
 }
 
+/// Enter at the byte `cursor`: the edit that continues (or, on an empty item, leaves) the
+/// list item it is in. `None` if the cursor is not in a list item, so the editor inserts
+/// the newline itself.
+pub fn newline(source: &str, cursor: usize) -> Option<Edit> {
+    lines::newline(source, cursor)
+}
+
+/// Tab (or Shift-Tab with `outdent`) on `selection`: move the list items it touches by the
+/// width of their marker. `None` if nothing changes.
+pub fn indent(source: &str, selection: Range<usize>, outdent: bool) -> Option<Edit> {
+    let sel = clamp(source, selection);
+    lines::indent(source, sel, outdent)
+}
+
 /// Sort, clamp to the text and move onto char boundaries (outwards).
 fn clamp(source: &str, sel: Range<usize>) -> Range<usize> {
     let (a, b) = if sel.start <= sel.end {
@@ -529,5 +543,71 @@ mod tests {
         for sel in [4..11, 8..14, 0..src.len(), 0..12] {
             assert_eq!(command(src, sel, Command::CodeBlock), None);
         }
+    }
+
+    fn nl(src: &str, cursor: usize) -> Option<(String, Range<usize>)> {
+        let edit = newline(src, cursor)?;
+        let mut text = src.to_string();
+        edit.apply(&mut text);
+        Some((text, edit.selection))
+    }
+
+    fn ind(src: &str, sel: Range<usize>, out: bool) -> Option<String> {
+        let edit = indent(src, sel, out)?;
+        let mut text = src.to_string();
+        edit.apply(&mut text);
+        Some(text)
+    }
+
+    #[test]
+    fn continues() {
+        assert_eq!(nl("- a", 3), Some(("- a\n- ".into(), 6..6)));
+        assert_eq!(nl("3. a", 4), Some(("3. a\n4. ".into(), 8..8)));
+        assert_eq!(nl("1) a", 4).unwrap().0, "1) a\n2) ");
+        assert_eq!(nl("- [x] a", 7).unwrap().0, "- [x] a\n- [ ] ");
+        assert_eq!(nl("  - a", 5).unwrap().0, "  - a\n  - ");
+        assert_eq!(nl("> - a", 5).unwrap().0, "> - a\n> - ");
+    }
+
+    #[test]
+    fn empty_item_leaves() {
+        assert_eq!(nl("- a\n- ", 6), Some(("- a\n".into(), 4..4)));
+        assert_eq!(nl("- ", 2), Some((String::new(), 0..0)));
+        assert_eq!(nl("> - a\n> - ", 10).unwrap().0, "> - a\n> ");
+    }
+
+    #[test]
+    fn not_in_list() {
+        assert_eq!(nl("a", 1), None);
+        assert_eq!(nl("", 0), None);
+        assert_eq!(nl("```\n- a\n```", 7), None);
+        assert_eq!(nl("- a", 1), None);
+    }
+
+    #[test]
+    fn mid_item_splits() {
+        assert_eq!(nl("- ab", 3), Some(("- a\n- b".into(), 6..6)));
+    }
+
+    #[test]
+    fn crlf() {
+        assert_eq!(nl("- a\r\n- b", 3).unwrap().0, "- a\r\n- \r\n- b");
+    }
+
+    #[test]
+    fn indents() {
+        assert_eq!(ind("- a\n- b", 0..7, false).unwrap(), "  - a\n  - b");
+        assert_eq!(ind("  - a\n  - b", 0..11, true).unwrap(), "- a\n- b");
+        assert_eq!(ind("1. a", 0..4, false).unwrap(), "   1. a");
+        assert_eq!(ind("- [ ] a", 0..0, false).unwrap(), "  - [ ] a");
+        assert_eq!(ind("- a\nb", 0..5, false).unwrap(), "  - a\nb");
+        assert_eq!(ind("> - a", 0..5, false).unwrap(), ">   - a");
+    }
+
+    #[test]
+    fn outdent_at_zero() {
+        assert_eq!(ind("- a", 0..3, true), None);
+        assert_eq!(ind("a", 0..1, false), None);
+        assert_eq!(ind(" - a", 0..4, true).unwrap(), "- a");
     }
 }

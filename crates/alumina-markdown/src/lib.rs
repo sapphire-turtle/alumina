@@ -9,7 +9,7 @@ mod layout;
 mod parse;
 mod style;
 
-pub use commands::{Command, Edit, command};
+pub use commands::{Command, Edit, command, indent, newline};
 pub use editor::{MarkdownEditor, MarkdownOutput};
 pub use egui;
 pub use layout::layout;

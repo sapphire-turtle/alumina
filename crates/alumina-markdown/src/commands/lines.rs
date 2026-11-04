@@ -338,3 +338,122 @@ fn finish(source: &str, sel: &Range<usize>, eol: &str, mut splices: Vec<Splice>)
         selection: map(sel.start)..map(sel.end),
     })
 }
+
+/// The length of the quote marks (`> `, nested too) and indentation that start `text`.
+fn container_prefix(text: &str) -> usize {
+    let mut at = 0;
+    loop {
+        let rest = &text[at..];
+        let ind = indent_len(rest);
+        match quote_mark(rest) {
+            Some(m) => at += ind + m,
+            None => return at,
+        }
+    }
+}
+
+/// Is the line whose list marker starts at `at` in a list item, and not in a code block?
+fn in_list_item(source: &str, at: usize) -> bool {
+    use crate::{BlockKind, parse};
+    let doc = parse(source);
+    let holds = |r: &Range<usize>| r.start <= at && at < r.end.max(r.start + 1);
+    let code = doc
+        .blocks
+        .iter()
+        .any(|b| matches!(b.kind, BlockKind::CodeBlock { .. }) && holds(&b.range));
+    !code
+        && doc
+            .blocks
+            .iter()
+            .any(|b| matches!(b.kind, BlockKind::ListItem { .. }) && holds(&b.range))
+}
+
+/// Enter at `cursor`: continue the list item the cursor is in, or leave it if it is empty.
+pub(super) fn newline(source: &str, cursor: usize) -> Option<Edit> {
+    let mut cursor = cursor.min(source.len());
+    while !source.is_char_boundary(cursor) {
+        cursor -= 1;
+    }
+    let eol = if source.contains("\r\n") {
+        "\r\n"
+    } else {
+        "\n"
+    };
+    let lines = split(source);
+    let line = lines[lines.partition_point(|l| l.start <= cursor) - 1];
+    let text = &source[line.start..line.end];
+    let prefix = container_prefix(text);
+    let (kind, len) = list_marker(&text[prefix..])?;
+    let ind = prefix + indent_len(&text[prefix..]);
+    let content = prefix + indent_len(&text[prefix..]) + len;
+    let content = content.min(text.len());
+    if cursor < line.start + content || cursor > line.end || !in_list_item(source, line.start + ind)
+    {
+        return None;
+    }
+    let marker = &text[ind..content];
+    if is_blank(&text[content..]) && line.start + content <= cursor {
+        // An empty item: take the marker off, keeping any quote.
+        let keep = text[..prefix].trim_end_matches([' ', '\t']);
+        let keep = if keep.is_empty() { "" } else { &text[..prefix] };
+        return Some(Edit {
+            replace: line.start..line.end,
+            with: keep.to_string(),
+            selection: line.start + keep.len()..line.start + keep.len(),
+        });
+    }
+    let next = match kind {
+        ListKind::Bullet => marker.to_string(),
+        ListKind::Task => format!("{}[ ] ", &marker[..marker.find('[')?]),
+        ListKind::Numbered => {
+            let d = marker.bytes().take_while(u8::is_ascii_digit).count();
+            let n: u64 = marker[..d].parse().ok()?;
+            format!("{}{}", n + 1, &marker[d..])
+        }
+    };
+    let with = format!("{eol}{}{next}", &text[..ind]);
+    Some(Edit {
+        replace: cursor..cursor,
+        selection: cursor + with.len()..cursor + with.len(),
+        with,
+    })
+}
+
+/// Tab / Shift-Tab: move the list items touched by `sel` by the width of their marker.
+pub(super) fn indent(source: &str, sel: Range<usize>, outdent: bool) -> Option<Edit> {
+    let lines = split(source);
+    let line_of = |p: usize| lines.partition_point(|l| l.start <= p) - 1;
+    let first = line_of(sel.start);
+    let mut last = line_of(sel.end);
+    if sel.start < sel.end && last > first && lines[last].start == sel.end {
+        last -= 1;
+    }
+    let mut splices = Vec::new();
+    for l in &lines[first..=last] {
+        let text = &source[l.start..l.end];
+        let prefix = container_prefix(text);
+        let rest = &text[prefix..];
+        let Some((kind, len)) = list_marker(rest) else {
+            continue;
+        };
+        if !in_list_item(source, l.start + prefix) {
+            continue;
+        }
+        let ind = indent_len(rest);
+        let marker = &rest[ind..];
+        let width = match kind {
+            ListKind::Task => marker.find('[').unwrap_or(len),
+            _ => len,
+        };
+        let at = l.start + prefix;
+        if outdent {
+            let spaces = rest.bytes().take_while(|&b| b == b' ').count().min(width);
+            if spaces > 0 {
+                splices.push(Splice::new(at, spaces, "", true));
+            }
+        } else {
+            splices.push(Splice::new(at, 0, " ".repeat(width), true));
+        }
+    }
+    finish(source, &sel, "\n", splices)
+}
