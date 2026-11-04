@@ -63,8 +63,21 @@ impl Demo {
     }
 }
 
+/// The demo's entry in the desktop's app menu, and the window's id and icon. A `cargo run`
+/// puts no entry there; the icon it still gives the window.
+const LAUNCHER: corundum_framework_platform::launcher::LauncherSpec =
+    corundum_framework_platform::launcher::LauncherSpec {
+        id: "alumina-demo",
+        name: "Alumina Demo",
+        description: "Try alumina's egui widgets",
+        category: "Development",
+        icon_svg: include_bytes!("../assets/app-icon.svg"),
+        bundle_prefix: "org.sapphire-turtle",
+    };
+
 fn window_options() -> corundum_framework_gui::window::WindowOptions {
     corundum_framework_gui::window::WindowOptions::new("alumina demo")
+        .launcher(LAUNCHER)
         .inner_size([960.0, 680.0])
         .min_inner_size([320.0, 400.0])
         // The Japanese labels need a CJK font, which egui does not bundle.

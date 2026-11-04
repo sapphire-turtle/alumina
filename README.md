@@ -1,3 +1,5 @@
+<img src="docs/logo.svg" alt="" width="72" height="72">
+
 # alumina
 
 Reusable [egui](https://github.com/emilk/egui) widgets from the sapphire apps and asteria,
