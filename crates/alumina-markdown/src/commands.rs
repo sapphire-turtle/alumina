@@ -65,7 +65,7 @@ pub fn command(source: &str, selection: Range<usize>, command: Command) -> Optio
         | Command::NumberedList
         | Command::TaskList
         | Command::Quote
-        | Command::CodeBlock) => Some(lines::edit(source, sel, line_command)),
+        | Command::CodeBlock) => lines::edit(source, sel, line_command),
     }
 }
 
@@ -483,7 +483,14 @@ mod tests {
         ];
         for cmd in all {
             for (src, sel) in [("", 0..0), ("a\nb", 3..3), ("a\nb", 0..0), ("a\n", 2..2)] {
-                let (text, selection) = run(src, sel, cmd);
+                // Nothing to do is None (removing a heading that is not there).
+                let Some(edit) = command(src, sel, cmd) else {
+                    assert_eq!(cmd, Command::Heading(0));
+                    continue;
+                };
+                let mut text = src.to_string();
+                edit.apply(&mut text);
+                let selection = edit.selection;
                 assert!(selection.start <= selection.end && selection.end <= text.len());
                 assert!(text.is_char_boundary(selection.start));
                 assert!(text.is_char_boundary(selection.end));
@@ -507,5 +514,20 @@ mod tests {
         );
         assert_eq!(run("```\r\na\r\n```", 5..5, Command::CodeBlock).0, "a");
         assert_eq!(run("a\r\n\r\nb", 0..6, Command::Quote).0, "> a\r\n>\r\n> b");
+    }
+
+    #[test]
+    fn nothing_to_do_is_none() {
+        assert_eq!(command("a", 0..0, Command::Heading(0)), None);
+        assert_eq!(command("", 0..0, Command::Heading(0)), None);
+    }
+
+    #[test]
+    fn code_block_over_part_of_a_block_is_none() {
+        let src = "```\na\n```\nb\n```\nc\n```";
+        // Inside to outside, outside to inside, and across two blocks.
+        for sel in [4..11, 8..14, 0..src.len(), 0..12] {
+            assert_eq!(command(src, sel, Command::CodeBlock), None);
+        }
     }
 }

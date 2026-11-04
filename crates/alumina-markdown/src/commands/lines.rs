@@ -160,7 +160,7 @@ fn fences(source: &str, lines: &[Line]) -> Vec<(usize, usize)> {
     blocks
 }
 
-pub(super) fn edit(source: &str, sel: Range<usize>, command: Command) -> Edit {
+pub(super) fn edit(source: &str, sel: Range<usize>, command: Command) -> Option<Edit> {
     let eol = if source.contains("\r\n") {
         "\r\n"
     } else {
@@ -260,9 +260,15 @@ pub(super) fn edit(source: &str, sel: Range<usize>, command: Command) -> Edit {
             }
         }
         Command::CodeBlock => {
-            let block = fences(source, &lines)
-                .into_iter()
+            let blocks = fences(source, &lines);
+            let block = blocks
+                .iter()
+                .copied()
                 .find(|&(o, c)| first >= o && last <= c);
+            // Partly in a block, or around one: wrapping would nest fences.
+            if block.is_none() && blocks.iter().any(|&(o, c)| first <= c && last >= o) {
+                return None;
+            }
             if let Some((o, c)) = block {
                 let (open, close) = (lines[o], lines[c]);
                 if c == o + 1 && close.next == close.end {
@@ -293,7 +299,7 @@ pub(super) fn edit(source: &str, sel: Range<usize>, command: Command) -> Edit {
 }
 
 /// Apply the splices (in order, not overlapping) and map the selection through them.
-fn finish(source: &str, sel: &Range<usize>, eol: &str, mut splices: Vec<Splice>) -> Edit {
+fn finish(source: &str, sel: &Range<usize>, eol: &str, mut splices: Vec<Splice>) -> Option<Edit> {
     // Line breaks in inserted text follow the source.
     for s in &mut splices {
         if eol == "\r\n" {
@@ -301,13 +307,7 @@ fn finish(source: &str, sel: &Range<usize>, eol: &str, mut splices: Vec<Splice>)
         }
     }
     splices.sort_by_key(|s| s.at);
-    let Some(lo) = splices.first().map(|s| s.at) else {
-        return Edit {
-            replace: sel.start..sel.start,
-            with: String::new(),
-            selection: sel.clone(),
-        };
-    };
+    let lo = splices.first()?.at;
     let hi = splices.iter().map(|s| s.at + s.del).max().unwrap_or(lo);
     let mut with = String::new();
     let mut at = lo;
@@ -332,9 +332,9 @@ fn finish(source: &str, sel: &Range<usize>, eol: &str, mut splices: Vec<Splice>)
         }
         p.saturating_add_signed(shift)
     };
-    Edit {
+    Some(Edit {
         replace: lo..hi,
         with,
         selection: map(sel.start)..map(sel.end),
-    }
+    })
 }
