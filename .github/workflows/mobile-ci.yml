@@ -4,8 +4,7 @@ name: Mobile CI
 # are built for iOS and Android on every pull request that touches them.
 #
 # Clippy for the phones, then the libraries' tests on an iOS simulator and an Android
-# emulator. Then the demo app (demo/) is built, started on the same simulator
-# and emulator, and left running for 20 seconds; its screenshot is uploaded for a look.
+# emulator. The demo app (demo/) is desktop-only and not built here.
 #
 # Not a required check: with the path filter it does not run on pull requests that touch
 # only the docs, and a required check that never runs would leave them pending.
@@ -14,7 +13,6 @@ on:
     # Cargo.lock too: a dependency bump (egui, corundum) can break a mobile build.
     paths:
       - crates/**
-      - demo/**
       - Cargo.toml
       - Cargo.lock
       - rust-toolchain.toml
@@ -24,9 +22,6 @@ on:
 defaults:
   run:
     shell: bash
-
-env:
-  DEMO: demo
 
 jobs:
   ios:
@@ -47,7 +42,7 @@ jobs:
       - name: Clippy (device and simulator)
         run: |
           for t in aarch64-apple-ios aarch64-apple-ios-sim; do
-            cargo clippy -p alumina-datetime -p alumina-markdown -p alumina-demo --target "$t" --all-targets --locked -- -D warnings || exit 1
+            cargo clippy -p alumina-datetime -p alumina-markdown --target "$t" --all-targets --locked -- -D warnings || exit 1
           done
 
       - name: Test on the simulator
@@ -58,35 +53,6 @@ jobs:
           echo "SIM_UDID=$udid" >> "$GITHUB_ENV"
           export CARGO_TARGET_AARCH64_APPLE_IOS_SIM_RUNNER="xcrun simctl spawn $udid"
           cargo test -p alumina-datetime -p alumina-markdown --lib --target aarch64-apple-ios-sim --locked
-
-      - name: Install XcodeGen
-        run: brew install xcodegen
-
-      # The Xcode project's pre-build script builds the demo's staticlib (ios/build-rust.sh).
-      - name: Build the demo for the simulator
-        working-directory: ${{ env.DEMO }}/ios
-        run: |
-          set -o pipefail
-          xcodegen generate
-          xcodebuild -project AluminaDemo.xcodeproj -scheme AluminaDemo \
-            -sdk iphonesimulator -configuration Debug -derivedDataPath build \
-            CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=NO build 2>&1 \
-            | tee xcodebuild.log | tail -n 100
-
-      - name: Run the demo on the simulator
-        run: .github/scripts/ios-demo-run.sh
-
-      - name: Upload the demo's screenshot and console
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: demo-ios
-          path: |
-            ${{ env.DEMO }}/ios/screenshot.png
-            ${{ env.DEMO }}/ios/console.log
-            ${{ env.DEMO }}/ios/console-stderr.log
-            ${{ env.DEMO }}/ios/xcodebuild.log
-          if-no-files-found: warn
 
   android:
     runs-on: ubuntu-latest
@@ -108,31 +74,13 @@ jobs:
       - name: Clippy (arm64 phones and x86_64 emulators)
         run: |
           export ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME"
-          cargo ndk -t arm64-v8a -t x86_64 clippy -p alumina-datetime -p alumina-markdown -p alumina-demo --all-targets --locked -- -D warnings
+          cargo ndk -t arm64-v8a -t x86_64 clippy -p alumina-datetime -p alumina-markdown --all-targets --locked -- -D warnings
 
       # Built before the emulator starts, so the emulator step only runs them.
       - name: Build the tests
         run: |
           export ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME"
           cargo ndk -t x86_64 test -p alumina-datetime -p alumina-markdown --lib --no-run --locked
-
-      # The demo's APK: its cdylib for the x86_64 emulator, packed by Gradle with GameActivity.
-      - name: Build the demo's library
-        run: |
-          export ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME"
-          ABIS=x86_64 "$DEMO/android/build-rust.sh" --locked
-
-      - uses: actions/setup-java@v6
-        with:
-          distribution: temurin
-          java-version: "17"
-
-      - uses: gradle/actions/setup-gradle@v6
-        with:
-          gradle-version: "8.14.3"
-
-      - name: Build the demo's APK
-        run: gradle -p "$DEMO/android" assembleDebug
 
       # The emulator needs hardware acceleration, which the runner allows once /dev/kvm is
       # opened up to its user.
@@ -155,14 +103,3 @@ jobs:
           disable-animations: true
           script: |
             ANDROID_NDK_HOME=$ANDROID_NDK_LATEST_HOME cargo ndk -t x86_64 test -p alumina-datetime -p alumina-markdown --lib --locked
-            .github/scripts/android-demo-run.sh
-
-      - name: Upload the demo's screenshot and log
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: demo-android
-          path: |
-            ${{ env.DEMO }}/android/screenshot.png
-            ${{ env.DEMO }}/android/logcat.txt
-          if-no-files-found: warn

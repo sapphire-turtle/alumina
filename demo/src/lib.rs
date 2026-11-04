@@ -1,14 +1,13 @@
-//! A window for trying alumina's widgets by hand, on a desktop or a phone.
+//! A window for trying alumina's widgets by hand.
 //!
-//! [`Demo`] is the app; [`run`] opens it in a desktop window (and on iOS, where
-//! `alumina_demo_main` calls it), and `android_main` on an Android phone.
+//! [`Demo`] is the app; [`run`] opens it in a desktop window.
 
 mod datetime;
 mod markdown;
 
 use corundum_framework_gui::egui;
 
-/// Below this width the pages stack their parts, as on a phone.
+/// Below this width the pages stack their parts, as a phone's would.
 pub const NARROW: f32 = 600.0;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -36,13 +35,7 @@ impl Default for Demo {
 
 impl corundum_framework_gui::eframe::App for Demo {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut corundum_framework_gui::eframe::Frame) {
-        // Clear of a phone's notch, status bar and home indicator: iOS reports them as egui's
-        // safe area (on Android corundum's window keeps the app clear of them itself). The
-        // strips outside get the panels' colour.
-        ui.painter()
-            .rect_filled(ui.max_rect(), 0.0, ui.visuals().panel_fill);
-        let safe = ui.max_rect() - ui.input(|i| i.safe_area_insets());
-        ui.scope_builder(egui::UiBuilder::new().max_rect(safe), |ui| self.pages(ui));
+        self.pages(ui);
     }
 }
 
@@ -88,7 +81,6 @@ fn window_options() -> corundum_framework_gui::window::WindowOptions {
 }
 
 /// Log to standard error, `RUST_LOG` choosing what.
-#[cfg(not(target_os = "android"))]
 pub fn init_logging() {
     use tracing_subscriber::EnvFilter;
 
@@ -98,31 +90,8 @@ pub fn init_logging() {
 }
 
 /// Open the demo's window and run it until it closes.
-#[cfg(not(target_os = "android"))]
 pub fn run() -> corundum_framework_gui::eframe::Result<()> {
     init_logging();
     tracing::info!("alumina demo: start");
     corundum_framework_gui::window::run(window_options(), |_cc| Box::new(Demo::default()))
-}
-
-/// The iOS app's entry: `main.m` in ios/ hands the main thread to this.
-#[cfg(target_os = "ios")]
-#[unsafe(no_mangle)]
-pub extern "C" fn alumina_demo_main() {
-    if let Err(err) = run() {
-        tracing::error!("alumina demo: run failed: {err}");
-    }
-}
-
-/// The Android app's entry, called by android-activity on GameActivity's thread.
-#[cfg(target_os = "android")]
-#[unsafe(no_mangle)]
-fn android_main(app: corundum_framework_gui::window::AndroidApp) {
-    corundum_framework_gui::logcat::install("alumina-demo", "alumina_demo=debug");
-    tracing::info!("alumina demo: start");
-    if let Err(err) = corundum_framework_gui::window::run_android(app, window_options(), |_cc| {
-        Box::new(Demo::default())
-    }) {
-        tracing::error!("alumina demo: run failed: {err}");
-    }
 }
