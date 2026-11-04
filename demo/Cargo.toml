@@ -32,9 +32,13 @@ tracing = { workspace = true }
 # system's bars and the keyboard, feeds it the keyboard's text, and on iOS puts it in a
 # scene; everywhere it finds a CJK font for the Japanese labels. Everywhere but Android it is
 # eframe's (`window::run`); on Android GameActivity's (`window::run_android`).
-# Embeds assets/app-icon.svg as the icon of the Windows executable (build.rs).
+# build.rs: embeds assets/app-icon.svg as the icon of the Windows executable, and renders the
+# phones' icons from assets/ (the platform crate's icon renderer, and `png` for iOS's, which
+# has no alpha channel; the version resvg's tiny-skia uses).
 [build-dependencies]
 corundum-framework-build = "0.7.0"
+corundum-framework-platform = { version = "0.7.0", default-features = false, features = ["icon"] }
+png = "0.18"
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
 corundum-framework-gui = { version = "0.7.0", default-features = false, features = ["eframe"] }

@@ -153,9 +153,10 @@ alumina's mark (`docs/logo.svg`, in the faceted brand blue), drawn in [`assets/`
 - `app-icon-foreground.svg`: the foreground of Android's adaptive icon, from Android 8 on,
   on the tile's colour.
 
-The phones take PNGs: after changing an SVG, run `assets/render-icons.sh` (needs
-`rsvg-convert` and ImageMagick) and commit what it renders into `ios/Assets.xcassets` and
-`android/app/src/main/res`.
+The phones take PNGs, which `build.rs` renders when cargo builds the demo for one: into
+`ios/Assets.xcassets/AppIcon.appiconset` and `android/app/src/main/res/mipmap-*`, where git
+ignores them. `build-rust.sh` runs that build on both, so a change to an SVG shows on the
+next build.
 
 ## CI
 
