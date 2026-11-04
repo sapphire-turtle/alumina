@@ -11,3 +11,8 @@ publish = false
 [dependencies]
 egui = { workspace = true }
 pulldown-cmark = { version = "0.13", default-features = false }
+
+[dev-dependencies]
+# egui's own fonts, for the tests' windows, which have no system's.
+egui = { workspace = true, features = ["default_fonts"] }
+egui_kittest = { version = "0.37", features = ["wgpu", "snapshot"] }
