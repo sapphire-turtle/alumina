@@ -186,6 +186,7 @@ name = "alumina-markdown"
 version = "0.1.0"
 dependencies = [
  "egui",
+ "egui_kittest",
  "pulldown-cmark",
 ]
 
