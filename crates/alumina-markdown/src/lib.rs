@@ -20,8 +20,9 @@
 //! ```no_run
 //! use alumina_markdown::{MarkdownEditor, MarkdownToolbar, egui};
 //!
-//! fn note(ui: &mut egui::Ui, text: &mut String) {
-//!     let id = egui::Id::unique("note");
+//! // Shown once per note: each gets an id of its own, shared by its toolbar and editor.
+//! fn note(ui: &mut egui::Ui, note_id: u64, text: &mut String) {
+//!     let id = ui.make_persistent_id(("note", note_id));
 //!     MarkdownToolbar::new(text, id).show(ui);
 //!     let output = MarkdownEditor::new(text).id(id).show(ui);
 //!     if let Some(url) = output.link_clicked {
@@ -43,4 +44,4 @@ pub use egui;
 pub use layout::layout;
 pub use parse::{Block, BlockKind, Doc, Inline, InlineKind, parse};
 pub use style::MarkdownStyle;
-pub use toolbar::{MarkdownToolbar, ToolbarIcons, ToolbarLabels};
+pub use toolbar::{MarkdownToolbar, ToolbarIcons, ToolbarLabels, ToolbarNames};

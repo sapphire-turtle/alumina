@@ -113,7 +113,7 @@ fn list_marker(text: &str) -> Option<(ListKind, usize)> {
 }
 
 /// The `#` marks after the indentation: the level and the length with the spaces after.
-fn heading(text: &str) -> Option<(usize, usize)> {
+pub(super) fn heading(text: &str) -> Option<(usize, usize)> {
     let ind = indent_len(text);
     let rest = &text[ind..];
     let level = rest.bytes().take_while(|&b| b == b'#').count();

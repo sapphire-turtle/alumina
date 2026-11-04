@@ -61,6 +61,18 @@ pub(crate) fn apply(ctx: &Context, id: Id, text: &mut String, edit: &Edit) {
     state.store(ctx, id);
 }
 
+/// Where the editor `id` finds that its text was edited this frame by something other than
+/// its `TextEdit` (the toolbar), so that it scrolls to the cursor.
+fn edited_id(id: Id) -> Id {
+    id.with("edited")
+}
+
+/// Tell the editor `id` that its text and cursor were changed for it: it scrolls to the
+/// cursor when it next shows.
+pub(crate) fn mark_edited(ctx: &Context, id: Id) {
+    ctx.data_mut(|d| d.insert_temp(edited_id(id), true));
+}
+
 /// What a key the editor takes does.
 #[derive(Clone, Copy)]
 enum Action {
@@ -177,8 +189,9 @@ fn take_keys(ui: &Ui, id: Id, text: &mut String) -> bool {
 
 /// Follow the IME through `events`, starting `composing` or not, and drop each Enter
 /// pressed while a composition is open: it commits the conversion. This holds outside lists
-/// too: native egui-winit never delivers that Enter, but on the web a composing Enter
-/// arrives as `Key::Enter`, which egui would turn into a newline (Ruling R7).
+/// too: eframe's native and web integrations drop such an Enter themselves, but an
+/// integration that delivers an Enter key with the commit would have egui turn it into a
+/// newline (Ruling R7).
 ///
 /// Returns whether a composition is still open, and whether `events` hold a preedit or a
 /// commit.
@@ -222,7 +235,7 @@ fn take_ime_enters(events: &mut Vec<Event>, mut composing: bool) -> (bool, bool)
 struct JobComputer;
 
 /// One parse: the job, the char indices of the thematic breaks to draw, in order, and the
-/// links (byte range and destination) to click.
+/// links (char range and destination) to click.
 #[derive(Clone)]
 struct Rendered {
     job: LayoutJob,
@@ -240,7 +253,7 @@ impl<'a> ComputerMut<(&'a str, &'a MarkdownStyle, u32), Rendered> for JobCompute
             .map(|b| b.range.start)
             .collect();
         let rules = byte_starts_to_chars(text, &starts);
-        let links = doc
+        let links: Vec<(Range<usize>, String)> = doc
             .inlines
             .iter()
             .filter_map(|i| match &i.kind {
@@ -248,6 +261,7 @@ impl<'a> ComputerMut<(&'a str, &'a MarkdownStyle, u32), Rendered> for JobCompute
                 _ => None,
             })
             .collect();
+        let links = links_to_chars(text, links);
         Rendered {
             links,
             job: layout(text, &doc, style, f32::from_bits(width)),
@@ -259,30 +273,43 @@ impl<'a> ComputerMut<(&'a str, &'a MarkdownStyle, u32), Rendered> for JobCompute
 type JobCache = FrameCache<Rendered, JobComputer>;
 
 /// A Markdown editor, or a read-only view with the same look.
+#[derive(Debug)]
 pub struct MarkdownEditor<'t> {
     text: &'t mut String,
-    id: Id,
+    id: Option<Id>,
     read_only: bool,
     style: Option<MarkdownStyle>,
     desired_rows: usize,
+    accessible_label: String,
 }
 
 impl<'t> MarkdownEditor<'t> {
+    /// An editor of `text`, which it edits in place.
     pub fn new(text: &'t mut String) -> Self {
         Self {
             text,
-            id: Id::unique("alumina-markdown"),
+            id: None,
             read_only: false,
             style: None,
             desired_rows: 8,
+            accessible_label: String::from("Markdown"),
         }
     }
 
-    /// The id of the `TextEdit`, to find its state before the editor shows.
+    /// The id of the `TextEdit`, to find its state before the editor shows; give the same
+    /// one to a [`MarkdownToolbar`](crate::MarkdownToolbar).
     ///
-    /// The default is shared by all editors: two in one window need an id each.
+    /// Without one, each editor takes the next automatic id of the `ui`, as a `TextEdit`
+    /// does: apart from the others, but not kept if the widgets before it change.
     pub fn id(mut self, id: Id) -> Self {
-        self.id = id;
+        self.id = Some(id);
+        self
+    }
+
+    /// What screen readers call the field; defaults to `"Markdown"`, in English, so that
+    /// it has a name at all.
+    pub fn accessible_label(mut self, label: impl Into<String>) -> Self {
+        self.accessible_label = label.into();
         self
     }
 
@@ -304,14 +331,26 @@ impl<'t> MarkdownEditor<'t> {
         self
     }
 
+    /// Shows the editor, taking its keys if it has the focus.
     pub fn show(self, ui: &mut Ui) -> MarkdownOutput {
-        let takes_keys = !self.read_only && ui.is_enabled() && ui.memory(|m| m.has_focus(self.id));
+        let id = self.id.unwrap_or_else(|| {
+            // As `TextEdit` does with no id.
+            let id = ui.next_auto_id();
+            ui.skip_ahead_auto_ids(1);
+            id
+        });
+        let takes_keys = !self.read_only && ui.is_enabled() && ui.memory(|m| m.has_focus(id));
         let edited = if takes_keys {
-            take_keys(ui, self.id, self.text)
+            take_keys(ui, id, self.text)
         } else {
-            forget_composing(ui.ctx(), self.id);
+            forget_composing(ui.ctx(), id);
             false
         };
+        // Edited by the toolbar since the last frame.
+        let edited_for_us = ui
+            .ctx()
+            .data_mut(|d| d.remove_temp::<bool>(edited_id(id)))
+            .unwrap_or(false);
         let style = self
             .style
             .unwrap_or_else(|| MarkdownStyle::from_visuals(ui.visuals()));
@@ -333,14 +372,14 @@ impl<'t> MarkdownEditor<'t> {
         let mut text_edit = if self.read_only {
             let mut view: &str = self.text.as_str();
             TextEdit::multiline(&mut view)
-                .id(self.id)
+                .id(id)
                 .desired_rows(self.desired_rows)
                 .desired_width(f32::INFINITY)
                 .layouter(&mut layouter)
                 .show(ui)
         } else {
             TextEdit::multiline(self.text)
-                .id(self.id)
+                .id(id)
                 .desired_rows(self.desired_rows)
                 .desired_width(f32::INFINITY)
                 .layouter(&mut layouter)
@@ -348,15 +387,18 @@ impl<'t> MarkdownEditor<'t> {
         };
 
         // Screen readers and tests find the field by this name.
-        ui.ctx().accesskit_node_builder(self.id, |node| {
-            node.set_label("Markdown");
+        ui.ctx().accesskit_node_builder(id, |node| {
+            node.set_label(self.accessible_label);
         });
         if edited {
             text_edit.response.mark_changed();
         }
+        if edited || edited_for_us {
+            // The `TextEdit` saw no change of its own, so it did not follow the cursor.
+            scroll_to_cursor(ui, &text_edit);
+        }
         paint_rules(ui, &text_edit, &rules);
-        let link_clicked =
-            link_at_pointer(ui, &text_edit, self.text.as_str(), &links, self.read_only);
+        let link_clicked = link_at_pointer(ui, &text_edit, &links, self.read_only);
         MarkdownOutput {
             // A read-only view reports the keys it ignored as changes.
             changed: !self.read_only && text_edit.response.changed(),
@@ -366,13 +408,25 @@ impl<'t> MarkdownEditor<'t> {
     }
 }
 
+/// Scroll the primary cursor of `out` into view, as the `TextEdit` does after its own edits.
+/// (Its cursor blink cannot be reset from outside egui.)
+fn scroll_to_cursor(ui: &Ui, out: &TextEditOutput) {
+    let galley = &out.galley;
+    // From the state: `cursor_range` is `None` while the focus comes back from the toolbar.
+    let Some(range) = out.state.cursor.range(galley) else {
+        return;
+    };
+    let offset = out.galley_pos.to_vec2() - egui::vec2(galley.rect.left(), 0.0);
+    let rect = galley.pos_from_cursor(range.primary).translate(offset);
+    ui.scroll_to_rect(rect, None);
+}
+
 /// The destination of the link under the pointer where a click would report it (always when
 /// `read_only`, else with the command key held): sets the pointing hand, and returns the link
 /// if this frame's click is on it.
 fn link_at_pointer(
     ui: &Ui,
     out: &TextEditOutput,
-    source: &str,
     links: &[(Range<usize>, String)],
     read_only: bool,
 ) -> Option<String> {
@@ -394,14 +448,31 @@ fn link_at_pointer(
     if at > 0 && rel.x < galley.pos_from_cursor(cursor).min.x {
         at -= 1;
     }
-    let byte = char_to_byte(source, at);
     let url = links
         .iter()
-        .find(|(range, _)| range.contains(&byte))
+        .find(|(range, _)| range.contains(&at))
         .map(|(_, url)| url)?;
     ui.output_mut(|o| o.cursor_icon = CursorIcon::PointingHand);
-    // `clicked` is the primary button.
-    response.clicked().then(|| url.clone())
+    // `clicked` is the primary button. A double or triple click is one more click of the
+    // same gesture, already reported.
+    (response.clicked() && !response.double_clicked() && !response.triple_clicked())
+        .then(|| url.clone())
+}
+
+/// `links` with their byte ranges of `s` made char ranges, in one pass over `s`.
+fn links_to_chars(s: &str, links: Vec<(Range<usize>, String)>) -> Vec<(Range<usize>, String)> {
+    if links.is_empty() {
+        return links;
+    }
+    let mut bytes: Vec<usize> = links.iter().flat_map(|(r, _)| [r.start, r.end]).collect();
+    bytes.sort_unstable();
+    bytes.dedup();
+    let chars = byte_starts_to_chars(s, &bytes);
+    let to_char = |b: usize| chars[bytes.binary_search(&b).expect("collected above")];
+    links
+        .into_iter()
+        .map(|(r, url)| (to_char(r.start)..to_char(r.end), url))
+        .collect()
 }
 
 /// The char indices of the byte offsets `starts`, in ascending order, in one pass over `s`.
@@ -453,12 +524,26 @@ fn paint_rules(ui: &Ui, out: &TextEditOutput, rules: &[usize]) {
 }
 
 /// What [`MarkdownEditor::show`] returns.
+#[non_exhaustive]
 pub struct MarkdownOutput {
     /// The text was edited this frame.
     pub changed: bool,
     /// A link was clicked, with its destination.
     pub link_clicked: Option<String>,
+    /// What the `TextEdit` underneath returned: its response (with the editor's id), galley
+    /// and cursor.
     pub text_edit: TextEditOutput,
+}
+
+impl std::fmt::Debug for MarkdownOutput {
+    /// `TextEditOutput` is not `Debug`: only its response's id is shown.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MarkdownOutput")
+            .field("changed", &self.changed)
+            .field("link_clicked", &self.link_clicked)
+            .field("id", &self.text_edit.response.id)
+            .finish_non_exhaustive()
+    }
 }
 
 #[cfg(test)]
@@ -490,6 +575,12 @@ mod tests {
         let style = MarkdownStyle::from_visuals(&egui::Visuals::dark());
         let r = JobComputer.compute(("a [x](u) b", &style, 100.0f32.to_bits()));
         assert_eq!(r.links, vec![(2..8, "u".to_string())]);
+        // Char ranges, not bytes.
+        let r = JobComputer.compute(("日本 [x](u) [y](v)", &style, 100.0f32.to_bits()));
+        assert_eq!(
+            r.links,
+            vec![(3..9, "u".to_string()), (10..16, "v".to_string())]
+        );
     }
 
     #[test]

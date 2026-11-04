@@ -87,6 +87,12 @@ pub fn indent(source: &str, selection: Range<usize>, outdent: bool) -> Option<Ed
     lines::indent(source, sel, outdent)
 }
 
+/// The level of the heading the line `line` (no line ending) starts, read as the heading
+/// command reads it; 0 if it is none.
+pub(crate) fn heading_level(line: &str) -> usize {
+    lines::heading(line.trim_end_matches('\r')).map_or(0, |h| h.0)
+}
+
 /// Sort, clamp to the text and move onto char boundaries (outwards).
 pub(crate) fn clamp(source: &str, sel: Range<usize>) -> Range<usize> {
     let (a, b) = if sel.start <= sel.end {
