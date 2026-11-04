@@ -148,7 +148,7 @@ alumina's mark (`docs/logo.svg`, in the faceted brand blue), drawn in [`assets/`
 
 - `app-icon.svg`: the mark as it is, for the desktops (the window's, and the Windows
   executable's through `build.rs`) and Android 7;
-- `app-icon-square.svg`: iOS's, the mark on a dark tile, full-bleed, as iOS rounds the
+- `app-icon-square.svg`: iOS's, the mark on a light grey tile, full-bleed, as iOS rounds the
   corners itself;
 - `app-icon-foreground.svg`: the foreground of Android's adaptive icon, from Android 8 on,
   on the tile's colour.
