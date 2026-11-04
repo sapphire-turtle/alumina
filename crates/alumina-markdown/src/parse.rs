@@ -9,6 +9,7 @@ use pulldown_cmark::{CodeBlockKind, Event, LinkType, Options, Parser, Tag, TagEn
 
 /// A parsed source: its blocks and inlines, in source order.
 #[derive(Clone, Debug, Default, PartialEq)]
+#[non_exhaustive]
 pub struct Doc {
     /// Nested blocks come after their parent.
     pub blocks: Vec<Block>,
@@ -18,7 +19,9 @@ pub struct Doc {
 
 /// A block of the source.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct Block {
+    /// What block it is.
     pub kind: BlockKind,
     /// The whole block, marks and trailing line ending included.
     pub range: Range<usize>,
@@ -26,45 +29,71 @@ pub struct Block {
     pub marks: Vec<Range<usize>>,
 }
 
+/// The kinds of [`Block`].
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum BlockKind {
+    /// Plain text.
     Paragraph,
     /// `level` is 1 to 6.
     Heading {
+        /// 1 to 6.
         level: u8,
     },
     /// `depth` 0 is the top list. `task` is `Some(checked)` for `[ ]` and `[x]`.
     ListItem {
+        /// How deep the list is nested, from 0.
         depth: usize,
+        /// The item's number in a numbered list; `None` in a bulleted one.
         number: Option<u64>,
+        /// `Some(checked)` for a task item.
         task: Option<bool>,
     },
     /// `depth` 1 is a single `>`.
     Quote {
+        /// The number of `>`, from 1.
         depth: usize,
     },
     /// `info` is `None` for an indented block or a bare fence.
     CodeBlock {
+        /// The info string after the opening fence (`rust` in ```` ```rust ````).
         info: Option<String>,
     },
+    /// `---`, `***` or `___`.
     ThematicBreak,
 }
 
 /// An inline span of a paragraph or heading.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct Inline {
+    /// What span it is.
     pub kind: InlineKind,
+    /// The whole span, marks included.
     pub range: Range<usize>,
+    /// The span's own marks, in source order.
     pub marks: Vec<Range<usize>>,
 }
 
+/// The kinds of [`Inline`].
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum InlineKind {
+    /// `*a*` or `_a_`.
     Emphasis,
+    /// `**a**` or `__a__`.
     Strong,
+    /// `~~a~~`.
     Strikethrough,
+    /// `` `a` ``.
     Code,
-    Link { url: String, text: Range<usize> },
+    /// `[text](url)`, an autolink or a reference.
+    Link {
+        /// The destination.
+        url: String,
+        /// The link text, without its brackets.
+        text: Range<usize>,
+    },
 }
 
 /// An open list or quote, for the depth of what is inside it.
