@@ -353,9 +353,8 @@ fn container_prefix(text: &str) -> usize {
 }
 
 /// Is the line whose list marker starts at `at` in a list item, and not in a code block?
-fn in_list_item(source: &str, at: usize) -> bool {
-    use crate::{BlockKind, parse};
-    let doc = parse(source);
+fn in_list_item(doc: &crate::Doc, at: usize) -> bool {
+    use crate::BlockKind;
     let holds = |r: &Range<usize>| r.start <= at && at < r.end.max(r.start + 1);
     let code = doc
         .blocks
@@ -379,6 +378,7 @@ pub(super) fn newline(source: &str, cursor: usize) -> Option<Edit> {
     } else {
         "\n"
     };
+    let doc = crate::parse(source);
     let lines = split(source);
     let line = lines[lines.partition_point(|l| l.start <= cursor) - 1];
     let text = &source[line.start..line.end];
@@ -387,12 +387,12 @@ pub(super) fn newline(source: &str, cursor: usize) -> Option<Edit> {
     let ind = prefix + indent_len(&text[prefix..]);
     let content = prefix + indent_len(&text[prefix..]) + len;
     let content = content.min(text.len());
-    if cursor < line.start + content || cursor > line.end || !in_list_item(source, line.start + ind)
-    {
+    // A cursor inside the marker returns None on purpose: Enter there is the editor's.
+    if cursor < line.start + content || cursor > line.end || !in_list_item(&doc, line.start + ind) {
         return None;
     }
     let marker = &text[ind..content];
-    if is_blank(&text[content..]) && line.start + content <= cursor {
+    if is_blank(&text[content..]) {
         // An empty item: take the marker off, keeping any quote.
         let keep = text[..prefix].trim_end_matches([' ', '\t']);
         let keep = if keep.is_empty() { "" } else { &text[..prefix] };
@@ -428,6 +428,7 @@ pub(super) fn indent(source: &str, sel: Range<usize>, outdent: bool) -> Option<E
     if sel.start < sel.end && last > first && lines[last].start == sel.end {
         last -= 1;
     }
+    let doc = crate::parse(source);
     let mut splices = Vec::new();
     for l in &lines[first..=last] {
         let text = &source[l.start..l.end];
@@ -436,7 +437,7 @@ pub(super) fn indent(source: &str, sel: Range<usize>, outdent: bool) -> Option<E
         let Some((kind, len)) = list_marker(rest) else {
             continue;
         };
-        if !in_list_item(source, l.start + prefix) {
+        if !in_list_item(&doc, l.start + prefix) {
             continue;
         }
         let ind = indent_len(rest);

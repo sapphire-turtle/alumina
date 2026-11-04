@@ -574,6 +574,8 @@ mod tests {
         assert_eq!(nl("- a\n- ", 6), Some(("- a\n".into(), 4..4)));
         assert_eq!(nl("- ", 2), Some((String::new(), 0..0)));
         assert_eq!(nl("> - a\n> - ", 10).unwrap().0, "> - a\n> ");
+        // A nested empty item leaves the list, indent and all.
+        assert_eq!(nl("- a\n  - ", 8), Some(("- a\n".into(), 4..4)));
     }
 
     #[test]
