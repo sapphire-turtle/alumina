@@ -1,0 +1,321 @@
+//! Commands on a source and a byte selection: each returns an [`Edit`] to apply.
+//!
+//! Everything here works in bytes on char boundaries; the editor converts egui's char
+//! cursors at its edge.
+
+use std::ops::Range;
+
+/// One change to a source: replace a range, then select a range of the result.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Edit {
+    /// The bytes of the source to replace.
+    pub replace: Range<usize>,
+    /// What goes in their place.
+    pub with: String,
+    /// The selection afterwards, in the edited text.
+    pub selection: Range<usize>,
+}
+
+impl Edit {
+    /// Apply the replacement to `text`.
+    pub fn apply(&self, text: &mut String) {
+        text.replace_range(self.replace.clone(), &self.with);
+    }
+}
+
+/// Something the editor can do to the selection.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Command {
+    /// `**bold**`.
+    Strong,
+    /// `*italic*`.
+    Emphasis,
+    /// `~~struck~~`.
+    Strikethrough,
+    /// `` `code` ``.
+    Code,
+    /// `[text](url)`, with `url` selected.
+    Link,
+    /// `#` marks, 1 to 6; 0 removes the heading.
+    Heading(u8),
+    /// `- ` lines.
+    BulletList,
+    /// `1. ` lines.
+    NumberedList,
+    /// `- [ ] ` lines.
+    TaskList,
+    /// `> ` lines.
+    Quote,
+    /// A fenced code block.
+    CodeBlock,
+}
+
+/// The edit that `command` makes to `selection` of `source`, or `None` if there is nothing
+/// to do. A selection out of range, reversed or off a char boundary is clamped.
+pub fn command(source: &str, selection: Range<usize>, command: Command) -> Option<Edit> {
+    let sel = clamp(source, selection);
+    match command {
+        Command::Strong => Some(toggle(source, sel, "**")),
+        Command::Emphasis => Some(toggle(source, sel, "*")),
+        Command::Strikethrough => Some(toggle(source, sel, "~~")),
+        Command::Code => Some(toggle(source, sel, "`")),
+        Command::Link => Some(link(source, sel)),
+        // Task 8
+        Command::Heading(_)
+        | Command::BulletList
+        | Command::NumberedList
+        | Command::TaskList
+        | Command::Quote
+        | Command::CodeBlock => None,
+    }
+}
+
+/// Sort, clamp to the text and move onto char boundaries (outwards).
+fn clamp(source: &str, sel: Range<usize>) -> Range<usize> {
+    let (a, b) = if sel.start <= sel.end {
+        (sel.start, sel.end)
+    } else {
+        (sel.end, sel.start)
+    };
+    let mut a = a.min(source.len());
+    let mut b = b.min(source.len());
+    while !source.is_char_boundary(a) {
+        a -= 1;
+    }
+    while !source.is_char_boundary(b) {
+        b += 1;
+    }
+    a..b
+}
+
+/// The run of alphanumeric chars around `at`, if any.
+fn word_at(source: &str, at: usize) -> Option<Range<usize>> {
+    let start = source[..at]
+        .char_indices()
+        .rev()
+        .take_while(|(_, c)| c.is_alphanumeric())
+        .last()
+        .map_or(at, |(i, _)| i);
+    let end = source[at..]
+        .char_indices()
+        .find(|(_, c)| !c.is_alphanumeric())
+        .map_or(source.len(), |(i, _)| at + i);
+    (start < end).then_some(start..end)
+}
+
+/// Is a run of `n` `*` an emphasis mark of this width? A run of exactly 2 is strong;
+/// 1 or 3 and more hold emphasis.
+fn run_ok(delim: &str, n: usize) -> bool {
+    match delim {
+        "*" => n == 1 || n >= 3,
+        "**" => n >= 2,
+        _ => true,
+    }
+}
+
+/// The length of the run of `*` at the end (or start) of `s`.
+fn star_run(s: &str, from_end: bool) -> usize {
+    if from_end {
+        s.chars().rev().take_while(|&c| c == '*').count()
+    } else {
+        s.chars().take_while(|&c| c == '*').count()
+    }
+}
+
+fn toggle(source: &str, sel: Range<usize>, delim: &str) -> Edit {
+    let d = delim.len();
+    let star = delim.starts_with('*');
+    let ok = |before: usize, after: usize| !star || (run_ok(delim, before) && run_ok(delim, after));
+
+    // The cursor (if any) to keep inside the text, and the range to mark.
+    let (cursor, range) = if sel.is_empty() {
+        match word_at(source, sel.start) {
+            Some(w) => (Some(sel.start), w),
+            None => {
+                // Inside an empty pair already? Remove it.
+                let (s, e) = (sel.start, sel.start);
+                if source[..s].ends_with(delim) && source[e..].starts_with(delim) {
+                    let at = s - d;
+                    return Edit {
+                        replace: at..e + d,
+                        with: String::new(),
+                        selection: at..at,
+                    };
+                }
+                return Edit {
+                    replace: s..e,
+                    with: format!("{delim}{delim}"),
+                    selection: s + d..s + d,
+                };
+            }
+        }
+    } else {
+        (None, sel)
+    };
+    let (start, end) = (range.start, range.end);
+    let text = &source[start..end];
+
+    // Delimiters at the edges of the selection.
+    if text.len() >= 2 * d
+        && text.starts_with(delim)
+        && text.ends_with(delim)
+        && ok(star_run(text, false), star_run(text, true))
+    {
+        let inner = &text[d..text.len() - d];
+        return Edit {
+            replace: start..end,
+            with: inner.to_string(),
+            selection: match cursor {
+                Some(c) => {
+                    let c = c.saturating_sub(d).max(start);
+                    c..c
+                }
+                None => start..start + inner.len(),
+            },
+        };
+    }
+    // Delimiters just outside.
+    let (before, after) = (&source[..start], &source[end..]);
+    if before.ends_with(delim)
+        && after.starts_with(delim)
+        && ok(star_run(before, true), star_run(after, false))
+    {
+        let at = start - d;
+        return Edit {
+            replace: at..end + d,
+            with: text.to_string(),
+            selection: match cursor {
+                Some(c) => c - d..c - d,
+                None => at..at + text.len(),
+            },
+        };
+    }
+    // Wrap.
+    Edit {
+        replace: start..end,
+        with: format!("{delim}{text}{delim}"),
+        selection: match cursor {
+            Some(c) => c + d..c + d,
+            None => start + d..end + d,
+        },
+    }
+}
+
+fn link(source: &str, sel: Range<usize>) -> Edit {
+    let range = if sel.is_empty() {
+        word_at(source, sel.start).unwrap_or(sel)
+    } else {
+        sel
+    };
+    let text = &source[range.clone()];
+    let url_start = range.start + 1 + text.len() + 2;
+    Edit {
+        replace: range,
+        with: format!("[{text}](url)"),
+        selection: url_start..url_start + 3,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn run(src: &str, sel: Range<usize>, cmd: Command) -> (String, Range<usize>) {
+        let edit = command(src, sel, cmd).expect("an edit");
+        let mut text = src.to_string();
+        edit.apply(&mut text);
+        (text, edit.selection)
+    }
+
+    #[test]
+    fn strong_wraps_selection() {
+        assert_eq!(
+            run("a b c", 2..3, Command::Strong),
+            ("a **b** c".into(), 4..5)
+        );
+    }
+
+    #[test]
+    fn strong_unwraps() {
+        assert_eq!(
+            run("a **b** c", 4..5, Command::Strong),
+            ("a b c".into(), 2..3)
+        );
+        assert_eq!(
+            run("a **b** c", 2..7, Command::Strong),
+            ("a b c".into(), 2..3)
+        );
+    }
+
+    #[test]
+    fn word_at_cursor() {
+        assert_eq!(
+            run("hello world", 8..8, Command::Emphasis),
+            ("hello *world*".into(), 9..9)
+        );
+    }
+
+    #[test]
+    fn empty_cursor_inserts_pair() {
+        assert_eq!(run("a  b", 2..2, Command::Code), ("a `` b".into(), 3..3));
+    }
+
+    #[test]
+    fn link() {
+        assert_eq!(
+            run("see this", 4..8, Command::Link),
+            ("see [this](url)".into(), 11..14)
+        );
+    }
+
+    #[test]
+    fn japanese_and_emoji() {
+        assert_eq!(
+            run("日本語🎌です", 3..13, Command::Strong),
+            ("日**本語🎌**です".into(), 5..15)
+        );
+    }
+
+    #[test]
+    fn cursor_in_marked_word_unwraps() {
+        assert_eq!(
+            run("hello *world*", 9..9, Command::Emphasis),
+            ("hello world".into(), 8..8)
+        );
+    }
+
+    #[test]
+    fn emphasis_and_strong_runs() {
+        assert_eq!(
+            run("***a***", 3..4, Command::Emphasis),
+            ("**a**".into(), 2..3)
+        );
+        assert_eq!(
+            run("**a**", 2..3, Command::Emphasis),
+            ("***a***".into(), 3..4)
+        );
+        assert_eq!(run("***a***", 3..4, Command::Strong), ("*a*".into(), 1..2));
+        assert_eq!(run("*a*", 1..2, Command::Strong), ("***a***".into(), 3..4));
+    }
+
+    #[test]
+    fn odd_selections_do_not_panic() {
+        // Inside the 3-byte char, reversed, and past the end.
+        let src = "日本";
+        let reversed = Range { start: 5, end: 1 };
+        for sel in [1..2, reversed, 4..40, 40..50, 0..0, 6..6] {
+            for cmd in [
+                Command::Strong,
+                Command::Emphasis,
+                Command::Strikethrough,
+                Command::Code,
+                Command::Link,
+            ] {
+                let (text, selection) = run(src, sel.clone(), cmd);
+                assert!(text.is_char_boundary(selection.start));
+                assert!(text.is_char_boundary(selection.end));
+            }
+        }
+        assert_eq!(run("", 0..0, Command::Strong), ("****".into(), 2..2));
+    }
+}
