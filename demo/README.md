@@ -144,12 +144,14 @@ What a simulator's mouse cannot tell; on a device, with a finger:
 
 ## The icon
 
-alumina's mark in white on a dark tile, drawn in [`assets/`](assets):
+alumina's mark (`docs/logo.svg`, in the faceted brand blue), drawn in [`assets/`](assets):
 
-- `app-icon.svg`: the desktops' (the window's, and the Windows executable's through
-  `build.rs`) and Android 7's;
-- `app-icon-square.svg`: iOS's, full-bleed, as iOS rounds the corners itself;
-- `app-icon-foreground.svg`: the foreground of Android's adaptive icon, from Android 8 on.
+- `app-icon.svg`: the mark as it is, for the desktops (the window's, and the Windows
+  executable's through `build.rs`) and Android 7;
+- `app-icon-square.svg`: iOS's, the mark on a dark tile, full-bleed, as iOS rounds the
+  corners itself;
+- `app-icon-foreground.svg`: the foreground of Android's adaptive icon, from Android 8 on,
+  on the tile's colour.
 
 The phones take PNGs: after changing an SVG, run `assets/render-icons.sh` (needs
 `rsvg-convert` and ImageMagick) and commit what it renders into `ios/Assets.xcassets` and
