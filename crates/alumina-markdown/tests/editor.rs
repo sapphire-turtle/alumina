@@ -15,6 +15,7 @@ struct State {
     text: String,
     changed: bool,
     sections: usize,
+    read_only: bool,
 }
 
 fn render(harness: &mut Harness<'_, impl Sized>, name: &str) {
@@ -31,17 +32,20 @@ const ID: &str = "md";
 
 fn editor(read_only: bool) -> Harness<'static, State> {
     Harness::builder().with_size([400.0, 200.0]).build_ui_state(
-        move |ui, s: &mut State| {
+        |ui, s: &mut State| {
             // egui's fonts have no Japanese: draw tofu instead of panicking.
             ui.ctx().set_missing_glyph_policy(MissingGlyphPolicy::Tofu);
             let out = MarkdownEditor::new(&mut s.text)
                 .id(Id::unique(ID))
-                .read_only(read_only)
+                .read_only(s.read_only)
                 .show(ui);
             s.changed |= out.changed;
             s.sections = out.text_edit.galley.job.sections.len();
         },
-        State::default(),
+        State {
+            read_only,
+            ..State::default()
+        },
     )
 }
 
@@ -314,4 +318,92 @@ fn read_only_ignores_keys() {
     h.run();
     assert_eq!(h.state().text, "a b");
     assert!(!h.state().changed);
+}
+
+fn key(modifiers: Modifiers, key: Key) -> Event {
+    Event::Key {
+        key,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers,
+    }
+}
+
+#[test]
+fn altgr_typing_is_not_a_shortcut() {
+    // Windows reports AltGr as Ctrl+Alt, and egui-winit falls back to the physical key.
+    let mut h = editor_with("a", false);
+    end(&mut h);
+    h.input_mut().events.extend([
+        key(Modifiers::COMMAND | Modifiers::ALT, Key::E),
+        Event::Text("€".into()),
+    ]);
+    h.run();
+    assert_eq!(h.state().text, "a€");
+}
+
+#[test]
+fn extra_shift_is_not_the_shortcut() {
+    let mut h = editor_with("a b", false);
+    select(&mut h, 2, 3);
+    h.key_press_modifiers(Modifiers::COMMAND | Modifiers::SHIFT, Key::B);
+    h.run();
+    assert_eq!(h.state().text, "a b");
+}
+
+#[test]
+fn composing_is_forgotten_when_not_editable() {
+    let mut h = editor_with("- a", false);
+    end(&mut h);
+    h.event(Event::Ime(ImeEvent::Preedit {
+        text: "か".into(),
+        active_range_chars: None,
+    }));
+    h.run();
+    // The commit never comes: the editor turns read-only for a frame, then back.
+    h.state_mut().read_only = true;
+    h.run();
+    h.state_mut().read_only = false;
+    h.run();
+    end(&mut h);
+    h.key_press(Key::Enter);
+    h.run();
+    assert_eq!(h.state().text, "- aか\n- ");
+}
+
+#[test]
+fn typing_ends_a_composition() {
+    let mut h = editor_with("- a", false);
+    end(&mut h);
+    h.event(Event::Ime(ImeEvent::Preedit {
+        text: "か".into(),
+        active_range_chars: None,
+    }));
+    h.run();
+    h.event(Event::Ime(ImeEvent::Preedit {
+        text: String::new(),
+        active_range_chars: None,
+    }));
+    h.run();
+    // A stale flag could also be ended by plain text.
+    h.ctx
+        .data_mut(|d| d.insert_temp(Id::unique(ID).with("composing"), true));
+    h.event(Event::Text("b".into()));
+    h.run();
+    assert_eq!(h.state().text, "- ab");
+    h.key_press(Key::Enter);
+    h.run();
+    assert_eq!(h.state().text, "- ab\n- ");
+}
+
+#[test]
+fn enter_with_no_cursor_acts_at_the_end() {
+    let mut h = editor_with("- a", false);
+    // Focused, but no stored cursor yet.
+    h.ctx
+        .data_mut(|d| d.remove::<TextEditState>(Id::unique(ID)));
+    h.key_press(Key::Enter);
+    h.run();
+    assert_eq!(h.state().text, "- a\n- ");
 }

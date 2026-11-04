@@ -60,98 +60,119 @@ fn apply(ctx: &Context, id: Id, text: &mut String, edit: &Edit) {
     state.store(ctx, id);
 }
 
-/// The shortcuts for the inline commands. `Command-X` alone is cut.
-const SHORTCUTS: [(Modifiers, Key, Command); 5] = [
-    (Modifiers::COMMAND, Key::B, Command::Strong),
-    (Modifiers::COMMAND, Key::I, Command::Emphasis),
-    (Modifiers::COMMAND, Key::K, Command::Link),
+/// What a key the editor takes does.
+#[derive(Clone, Copy)]
+enum Action {
+    Command(Command),
+    /// Tab, or Shift-Tab with `true`.
+    Indent(bool),
+    Newline,
+}
+
+/// The keys the editor takes, with exactly these modifiers: an extra Alt is AltGr typing a
+/// char on Windows (Ctrl+Alt), an extra Shift is someone else's shortcut. `Command-X` alone
+/// is cut.
+const KEYS: [(Modifiers, Key, Action); 8] = [
+    (Modifiers::COMMAND, Key::B, Action::Command(Command::Strong)),
+    (
+        Modifiers::COMMAND,
+        Key::I,
+        Action::Command(Command::Emphasis),
+    ),
+    (Modifiers::COMMAND, Key::K, Action::Command(Command::Link)),
     (
         Modifiers::COMMAND.plus(Modifiers::SHIFT),
         Key::X,
-        Command::Strikethrough,
+        Action::Command(Command::Strikethrough),
     ),
-    (Modifiers::COMMAND, Key::E, Command::Code),
+    (Modifiers::COMMAND, Key::E, Action::Command(Command::Code)),
+    (Modifiers::NONE, Key::Tab, Action::Indent(false)),
+    (Modifiers::SHIFT, Key::Tab, Action::Indent(true)),
+    (Modifiers::NONE, Key::Enter, Action::Newline),
 ];
+
+/// The action of `event`, if it is a press of one of [`KEYS`].
+fn action(event: &Event) -> Option<Action> {
+    let Event::Key {
+        key,
+        pressed: true,
+        modifiers,
+        ..
+    } = event
+    else {
+        return None;
+    };
+    KEYS.iter()
+        .find(|(m, k, _)| k == key && modifiers.matches_exact(*m))
+        .map(|&(_, _, action)| action)
+}
 
 /// Where the editor `id` keeps whether an IME composition is open.
 fn composing_id(id: Id) -> Id {
     id.with("composing")
 }
 
-/// Take the keys the focused editor `id` handles out of this frame's input, and apply their
-/// edits to `text` before the `TextEdit` sees the rest. Whether `text` changed.
+/// Forget an open IME composition: the editor is not taking keys this frame, so it cannot
+/// follow one, and a stale flag would swallow every later Enter.
+fn forget_composing(ctx: &Context, id: Id) {
+    ctx.data_mut(|d| d.remove::<bool>(composing_id(id)));
+}
+
+/// Take the keys the focused, editable editor `id` handles out of this frame's input, and
+/// apply their edits to `text` before the `TextEdit` sees the rest. Whether `text` changed.
 fn take_keys(ui: &Ui, id: Id, text: &mut String) -> bool {
     let ctx = ui.ctx();
-    if !ui.memory(|m| m.has_focus(id)) {
-        ctx.data_mut(|d| d.remove::<bool>(composing_id(id)));
-        return false;
-    }
     let was_composing = ctx.data(|d| d.get_temp::<bool>(composing_id(id)).unwrap_or(false));
     let (composing, ime) = ui.input_mut(|i| take_ime_enters(&mut i.events, was_composing));
     ctx.data_mut(|d| d.insert_temp(composing_id(id), composing));
 
-    let mut changed = false;
-    for (modifiers, key, cmd) in SHORTCUTS {
-        let Some(sel) = selection(ctx, id, text) else {
-            return changed;
-        };
-        if ui.input_mut(|i| i.consume_key(modifiers, key))
-            && let Some(edit) = command(text, sel, cmd)
-        {
-            apply(ctx, id, text, &edit);
-            changed = true;
-        }
+    // The presses to act on, in order; most frames have none.
+    let presses: Vec<(usize, Action)> = ui.input(|i| {
+        i.events
+            .iter()
+            .enumerate()
+            .filter_map(|(at, e)| action(e).map(|a| (at, a)))
+            .collect()
+    });
+    if presses.is_empty() {
+        return false;
     }
+    // With no cursor yet (focus just gained), act at the end of the text.
+    let mut sel = selection(ctx, id, text).unwrap_or(text.len()..text.len());
+    let mut taken = 0;
     let mut indented = false;
-    for (modifiers, outdent) in [(Modifiers::NONE, false), (Modifiers::SHIFT, true)] {
-        indented |= take_presses(ui, id, text, modifiers, Key::Tab, |text, sel| {
-            indent(text, sel, outdent)
-        });
+    let mut changed = false;
+    for (at, action) in presses {
+        let edit = match action {
+            Action::Command(cmd) => command(text, sel.clone(), cmd),
+            Action::Indent(outdent) => indent(text, sel.clone(), outdent),
+            // Enter that commits a conversion is the IME's, not a new line's.
+            Action::Newline if ime || composing || !sel.is_empty() => None,
+            Action::Newline => newline(text, sel.start),
+        };
+        // Nothing to do: the key is egui's.
+        let Some(edit) = edit else { continue };
+        ui.input_mut(|i| i.events.remove(at - taken));
+        taken += 1;
+        indented |= matches!(action, Action::Indent(_));
+        apply(ctx, id, text, &edit);
+        sel = edit.selection;
+        changed = true;
     }
     if indented {
-        changed = true;
         // The Tab was ours: egui's focus must not move on with it.
         ui.memory_mut(|m| m.move_focus(FocusDirection::None));
-    }
-    // Enter that commits a conversion is the IME's, not a new line's.
-    if !ime && !composing {
-        changed |= take_presses(ui, id, text, Modifiers::NONE, Key::Enter, |text, sel| {
-            sel.is_empty().then(|| newline(text, sel.start)).flatten()
-        });
-    }
-    changed
-}
-
-/// Each press of `key` with exactly `modifiers`, while `edit` has something to do: take
-/// the press and apply the edit. Presses with nothing to do are left to egui.
-fn take_presses(
-    ui: &Ui,
-    id: Id,
-    text: &mut String,
-    modifiers: Modifiers,
-    key: Key,
-    edit: impl Fn(&str, Range<usize>) -> Option<Edit>,
-) -> bool {
-    let is_press = |e: &Event| {
-        matches!(e, Event::Key { key: k, pressed: true, modifiers: m, .. }
-            if *k == key && m.matches_exact(modifiers))
-    };
-    let mut changed = false;
-    while let Some(at) = ui.input(|i| i.events.iter().position(is_press)) {
-        let Some(e) = selection(ui.ctx(), id, text).and_then(|sel| edit(text, sel)) else {
-            break;
-        };
-        ui.input_mut(|i| i.events.remove(at));
-        apply(ui.ctx(), id, text, &e);
-        changed = true;
     }
     changed
 }
 
 /// Follow the IME through `events`, starting `composing` or not, and drop each Enter
-/// pressed while a composition is open: it commits the conversion (some platforms deliver
-/// it with the commit). Returns whether a composition is still open, and whether `events`
-/// hold a preedit or a commit.
+/// pressed while a composition is open: it commits the conversion. This holds outside lists
+/// too: native egui-winit never delivers that Enter, but on the web a composing Enter
+/// arrives as `Key::Enter`, which egui would turn into a newline (Ruling R7).
+///
+/// Returns whether a composition is still open, and whether `events` hold a preedit or a
+/// commit.
 fn take_ime_enters(events: &mut Vec<Event>, mut composing: bool) -> (bool, bool) {
     let mut ime = false;
     events.retain(|e| match e {
@@ -165,8 +186,15 @@ fn take_ime_enters(events: &mut Vec<Event>, mut composing: bool) -> (bool, bool)
             composing = false;
             true
         }
+        // egui-winit discards winit's `Ime::Enabled`/`Disabled`; this is for other
+        // integrations.
         #[allow(deprecated)]
         Event::Ime(ImeEvent::Disabled) => {
+            composing = false;
+            true
+        }
+        // Plain typing: whatever composition there was is over.
+        Event::Text(_) => {
             composing = false;
             true
         }
@@ -256,7 +284,13 @@ impl<'t> MarkdownEditor<'t> {
     }
 
     pub fn show(self, ui: &mut Ui) -> MarkdownOutput {
-        let edited = !self.read_only && ui.is_enabled() && take_keys(ui, self.id, self.text);
+        let takes_keys = !self.read_only && ui.is_enabled() && ui.memory(|m| m.has_focus(self.id));
+        let edited = if takes_keys {
+            take_keys(ui, self.id, self.text)
+        } else {
+            forget_composing(ui.ctx(), self.id);
+            false
+        };
         let style = self
             .style
             .unwrap_or_else(|| MarkdownStyle::from_visuals(ui.visuals()));
