@@ -6,7 +6,7 @@ use egui::text_edit::TextEditOutput;
 use egui::{Id, TextEdit, Ui};
 
 use crate::layout::layout;
-use crate::parse::{BlockKind, Doc, parse};
+use crate::parse::{BlockKind, parse};
 use crate::style::MarkdownStyle;
 
 /// The byte offset of char `c` in `s`; past the end, `s.len()`.
@@ -24,13 +24,30 @@ pub(crate) fn byte_to_char(s: &str, b: usize) -> usize {
 #[derive(Default)]
 struct JobComputer;
 
-impl<'a> ComputerMut<(&'a str, &'a MarkdownStyle, u32), LayoutJob> for JobComputer {
-    fn compute(&mut self, (text, style, width): (&'a str, &'a MarkdownStyle, u32)) -> LayoutJob {
-        layout(text, &parse(text), style, f32::from_bits(width))
+/// One parse: the job, and the byte offsets of the thematic breaks to draw.
+#[derive(Clone)]
+struct Rendered {
+    job: LayoutJob,
+    rules: Vec<usize>,
+}
+
+impl<'a> ComputerMut<(&'a str, &'a MarkdownStyle, u32), Rendered> for JobComputer {
+    fn compute(&mut self, (text, style, width): (&'a str, &'a MarkdownStyle, u32)) -> Rendered {
+        let doc = parse(text);
+        let rules = doc
+            .blocks
+            .iter()
+            .filter(|b| b.kind == BlockKind::ThematicBreak)
+            .map(|b| b.range.start)
+            .collect();
+        Rendered {
+            job: layout(text, &doc, style, f32::from_bits(width)),
+            rules,
+        }
     }
 }
 
-type JobCache = FrameCache<LayoutJob, JobComputer>;
+type JobCache = FrameCache<Rendered, JobComputer>;
 
 /// A Markdown editor, or a read-only view with the same look.
 pub struct MarkdownEditor<'t> {
@@ -53,6 +70,8 @@ impl<'t> MarkdownEditor<'t> {
     }
 
     /// The id of the `TextEdit`, to find its state before the editor shows.
+    ///
+    /// The default is shared by all editors: two in one window need an id each.
     pub fn id(mut self, id: Id) -> Self {
         self.id = id;
         self
@@ -70,6 +89,7 @@ impl<'t> MarkdownEditor<'t> {
         self
     }
 
+    /// The height in rows of text; defaults to 8.
     pub fn desired_rows(mut self, rows: usize) -> Self {
         self.desired_rows = rows;
         self
@@ -79,14 +99,17 @@ impl<'t> MarkdownEditor<'t> {
         let style = self
             .style
             .unwrap_or_else(|| MarkdownStyle::from_visuals(ui.visuals()));
+        // Set by each call of the layouter, so the last one (after any edit) wins.
+        let mut rules = Vec::new();
         let mut layouter = |ui: &Ui, buf: &dyn egui::TextBuffer, wrap_width: f32| {
-            let job = ui.memory_mut(|m| {
+            let rendered = ui.memory_mut(|m| {
                 m.caches
                     .cache::<JobCache>()
                     .get((buf.as_str(), &style, wrap_width.to_bits()))
                     .clone()
             });
-            ui.fonts_mut(|f| f.layout_job(job))
+            rules = rendered.rules;
+            ui.fonts_mut(|f| f.layout_job(rendered.job))
         };
 
         let text_edit = if self.read_only {
@@ -110,7 +133,7 @@ impl<'t> MarkdownEditor<'t> {
         ui.ctx().accesskit_node_builder(self.id, |node| {
             node.set_label("Markdown");
         });
-        paint_rules(ui, &text_edit, self.text.as_str());
+        paint_rules(ui, &text_edit, self.text.as_str(), &rules);
         MarkdownOutput {
             // A read-only view reports the keys it ignored as changes.
             changed: !self.read_only && text_edit.response.changed(),
@@ -120,17 +143,13 @@ impl<'t> MarkdownEditor<'t> {
     }
 }
 
-/// Draws a line through the row of each thematic break.
-fn paint_rules(ui: &Ui, out: &TextEditOutput, source: &str) {
-    let doc: Doc = parse(source);
+/// Draws a line through the row of each thematic break, given by byte offset.
+fn paint_rules(ui: &Ui, out: &TextEditOutput, source: &str, rules: &[usize]) {
     let stroke = ui.visuals().widgets.noninteractive.bg_stroke;
     let clip = out.text_clip_rect;
     let painter = ui.painter_at(clip);
-    for block in &doc.blocks {
-        if block.kind != BlockKind::ThematicBreak {
-            continue;
-        }
-        let at = CCursor::new(byte_to_char(source, block.range.start));
+    for &start in rules {
+        let at = CCursor::new(byte_to_char(source, start));
         let y = out.galley_pos.y + out.galley.pos_from_cursor(at).center().y;
         painter.hline(clip.x_range(), y, stroke);
     }
@@ -159,6 +178,14 @@ mod tests {
         assert_eq!(byte_to_char(s, 4), 2);
         assert_eq!(byte_to_char(s, 11), 4);
         assert_eq!(byte_to_char(s, s.len()), 5);
+    }
+
+    #[test]
+    fn the_cached_value_carries_the_rules() {
+        let style = MarkdownStyle::from_visuals(&egui::Visuals::dark());
+        let r = JobComputer.compute(("a\n\n---\n", &style, 100.0f32.to_bits()));
+        assert_eq!(r.rules, vec![3]);
+        assert_eq!(r.job.text, "a\n\n---\n");
     }
 
     #[test]
