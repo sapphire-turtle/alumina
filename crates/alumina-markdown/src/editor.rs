@@ -1,16 +1,19 @@
-//! [`MarkdownEditor`]: a `TextEdit` whose layouter lays the text out as Markdown.
+//! [`MarkdownEditor`]: a `TextEdit` whose layouter lays the text out as Markdown, and which
+//! takes the shortcut keys, Enter and Tab for the [`commands`](crate::commands).
+
+use std::ops::Range;
 
 use egui::cache::{ComputerMut, FrameCache};
-use egui::text::{CCursor, LayoutJob};
-use egui::text_edit::TextEditOutput;
-use egui::{Id, TextEdit, Ui};
+use egui::text::{CCursor, CCursorRange, LayoutJob};
+use egui::text_edit::{TextEditOutput, TextEditState};
+use egui::{Context, Event, FocusDirection, Id, ImeEvent, Key, Modifiers, TextEdit, Ui};
 
+use crate::commands::{Command, Edit, command, indent, newline};
 use crate::layout::layout;
 use crate::parse::{BlockKind, parse};
 use crate::style::MarkdownStyle;
 
 /// The byte offset of char `c` in `s`; past the end, `s.len()`.
-#[allow(dead_code)] // Used by the commands (Task 7 on).
 pub(crate) fn char_to_byte(s: &str, c: usize) -> usize {
     s.char_indices().nth(c).map_or(s.len(), |(b, _)| b)
 }
@@ -18,6 +21,163 @@ pub(crate) fn char_to_byte(s: &str, c: usize) -> usize {
 /// The char index of byte `b` in `s`; past the end, the char count.
 pub(crate) fn byte_to_char(s: &str, b: usize) -> usize {
     s.char_indices().take_while(|(i, _)| *i < b).count()
+}
+
+/// The selection of the editor `id` in bytes of `text`; `None` if it has no cursor yet.
+pub(crate) fn selection(ctx: &Context, id: Id, text: &str) -> Option<Range<usize>> {
+    let range = TextEditState::load(ctx, id)?.cursor.char_range()?;
+    let [start, end] = range.sorted_cursors();
+    Some(char_to_byte(text, start.index.0)..char_to_byte(text, end.index.0))
+}
+
+/// Select `bytes` of `text` in the editor `id`.
+#[allow(dead_code)] // For the toolbar (Task 11).
+pub(crate) fn set_selection(ctx: &Context, id: Id, text: &str, bytes: Range<usize>) {
+    let mut state = TextEditState::load(ctx, id).unwrap_or_default();
+    state.cursor.set_char_range(Some(char_range(text, bytes)));
+    state.store(ctx, id);
+}
+
+fn char_range(text: &str, bytes: Range<usize>) -> CCursorRange {
+    CCursorRange::two(
+        CCursor::new(byte_to_char(text, bytes.start)),
+        CCursor::new(byte_to_char(text, bytes.end)),
+    )
+}
+
+/// Apply `edit` to the editor `id` holding `text`, as one step for its undo.
+fn apply(ctx: &Context, id: Id, text: &mut String, edit: &Edit) {
+    let mut state = TextEditState::load(ctx, id).unwrap_or_default();
+    let mut undoer = state.undoer();
+    if let Some(before) = state.cursor.char_range() {
+        undoer.add_undo(&(before, text.clone()));
+    }
+    edit.apply(text);
+    let after = char_range(text, edit.selection.clone());
+    state.cursor.set_char_range(Some(after));
+    undoer.add_undo(&(after, text.clone()));
+    state.set_undoer(undoer);
+    state.store(ctx, id);
+}
+
+/// The shortcuts for the inline commands. `Command-X` alone is cut.
+const SHORTCUTS: [(Modifiers, Key, Command); 5] = [
+    (Modifiers::COMMAND, Key::B, Command::Strong),
+    (Modifiers::COMMAND, Key::I, Command::Emphasis),
+    (Modifiers::COMMAND, Key::K, Command::Link),
+    (
+        Modifiers::COMMAND.plus(Modifiers::SHIFT),
+        Key::X,
+        Command::Strikethrough,
+    ),
+    (Modifiers::COMMAND, Key::E, Command::Code),
+];
+
+/// Where the editor `id` keeps whether an IME composition is open.
+fn composing_id(id: Id) -> Id {
+    id.with("composing")
+}
+
+/// Take the keys the focused editor `id` handles out of this frame's input, and apply their
+/// edits to `text` before the `TextEdit` sees the rest. Whether `text` changed.
+fn take_keys(ui: &Ui, id: Id, text: &mut String) -> bool {
+    let ctx = ui.ctx();
+    if !ui.memory(|m| m.has_focus(id)) {
+        ctx.data_mut(|d| d.remove::<bool>(composing_id(id)));
+        return false;
+    }
+    let was_composing = ctx.data(|d| d.get_temp::<bool>(composing_id(id)).unwrap_or(false));
+    let (composing, ime) = ui.input_mut(|i| take_ime_enters(&mut i.events, was_composing));
+    ctx.data_mut(|d| d.insert_temp(composing_id(id), composing));
+
+    let mut changed = false;
+    for (modifiers, key, cmd) in SHORTCUTS {
+        let Some(sel) = selection(ctx, id, text) else {
+            return changed;
+        };
+        if ui.input_mut(|i| i.consume_key(modifiers, key))
+            && let Some(edit) = command(text, sel, cmd)
+        {
+            apply(ctx, id, text, &edit);
+            changed = true;
+        }
+    }
+    let mut indented = false;
+    for (modifiers, outdent) in [(Modifiers::NONE, false), (Modifiers::SHIFT, true)] {
+        indented |= take_presses(ui, id, text, modifiers, Key::Tab, |text, sel| {
+            indent(text, sel, outdent)
+        });
+    }
+    if indented {
+        changed = true;
+        // The Tab was ours: egui's focus must not move on with it.
+        ui.memory_mut(|m| m.move_focus(FocusDirection::None));
+    }
+    // Enter that commits a conversion is the IME's, not a new line's.
+    if !ime && !composing {
+        changed |= take_presses(ui, id, text, Modifiers::NONE, Key::Enter, |text, sel| {
+            sel.is_empty().then(|| newline(text, sel.start)).flatten()
+        });
+    }
+    changed
+}
+
+/// Each press of `key` with exactly `modifiers`, while `edit` has something to do: take
+/// the press and apply the edit. Presses with nothing to do are left to egui.
+fn take_presses(
+    ui: &Ui,
+    id: Id,
+    text: &mut String,
+    modifiers: Modifiers,
+    key: Key,
+    edit: impl Fn(&str, Range<usize>) -> Option<Edit>,
+) -> bool {
+    let is_press = |e: &Event| {
+        matches!(e, Event::Key { key: k, pressed: true, modifiers: m, .. }
+            if *k == key && m.matches_exact(modifiers))
+    };
+    let mut changed = false;
+    while let Some(at) = ui.input(|i| i.events.iter().position(is_press)) {
+        let Some(e) = selection(ui.ctx(), id, text).and_then(|sel| edit(text, sel)) else {
+            break;
+        };
+        ui.input_mut(|i| i.events.remove(at));
+        apply(ui.ctx(), id, text, &e);
+        changed = true;
+    }
+    changed
+}
+
+/// Follow the IME through `events`, starting `composing` or not, and drop each Enter
+/// pressed while a composition is open: it commits the conversion (some platforms deliver
+/// it with the commit). Returns whether a composition is still open, and whether `events`
+/// hold a preedit or a commit.
+fn take_ime_enters(events: &mut Vec<Event>, mut composing: bool) -> (bool, bool) {
+    let mut ime = false;
+    events.retain(|e| match e {
+        Event::Ime(ImeEvent::Preedit { text, .. }) => {
+            ime = true;
+            composing = !text.is_empty();
+            true
+        }
+        Event::Ime(ImeEvent::Commit(_)) => {
+            ime = true;
+            composing = false;
+            true
+        }
+        #[allow(deprecated)]
+        Event::Ime(ImeEvent::Disabled) => {
+            composing = false;
+            true
+        }
+        Event::Key {
+            key: Key::Enter,
+            pressed: true,
+            ..
+        } => !composing,
+        _ => true,
+    });
+    (composing, ime)
 }
 
 /// Parses and lays out, the work the cache saves.
@@ -96,6 +256,7 @@ impl<'t> MarkdownEditor<'t> {
     }
 
     pub fn show(self, ui: &mut Ui) -> MarkdownOutput {
+        let edited = !self.read_only && ui.is_enabled() && take_keys(ui, self.id, self.text);
         let style = self
             .style
             .unwrap_or_else(|| MarkdownStyle::from_visuals(ui.visuals()));
@@ -112,7 +273,7 @@ impl<'t> MarkdownEditor<'t> {
             ui.fonts_mut(|f| f.layout_job(rendered.job))
         };
 
-        let text_edit = if self.read_only {
+        let mut text_edit = if self.read_only {
             let mut view: &str = self.text.as_str();
             TextEdit::multiline(&mut view)
                 .id(self.id)
@@ -133,6 +294,9 @@ impl<'t> MarkdownEditor<'t> {
         ui.ctx().accesskit_node_builder(self.id, |node| {
             node.set_label("Markdown");
         });
+        if edited {
+            text_edit.response.mark_changed();
+        }
         paint_rules(ui, &text_edit, self.text.as_str(), &rules);
         MarkdownOutput {
             // A read-only view reports the keys it ignored as changes.
