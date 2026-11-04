@@ -59,7 +59,7 @@ pub fn command(source: &str, selection: Range<usize>, command: Command) -> Optio
         Command::Emphasis => Some(toggle(source, sel, "*")),
         Command::Strikethrough => Some(toggle(source, sel, "~~")),
         Command::Code => Some(toggle(source, sel, "`")),
-        Command::Link => Some(link(source, sel)),
+        Command::Link => Some(unlink(source, &sel).unwrap_or_else(|| link(source, sel))),
         // Task 8
         Command::Heading(_)
         | Command::BulletList
@@ -79,8 +79,13 @@ fn clamp(source: &str, sel: Range<usize>) -> Range<usize> {
     };
     let mut a = a.min(source.len());
     let mut b = b.min(source.len());
+    let point = a == b;
     while !source.is_char_boundary(a) {
         a -= 1;
+    }
+    if point {
+        // A point stays a point.
+        return a..a;
     }
     while !source.is_char_boundary(b) {
         b += 1;
@@ -122,6 +127,46 @@ fn star_run(s: &str, from_end: bool) -> usize {
     }
 }
 
+/// Can `text` be the inside of one span of `delim`? It must not touch whitespace at its
+/// ends (CommonMark's flanking rule) and must not hold the delimiter itself, or the marks
+/// beside it belong to two neighbouring spans. Runs of `*` at its ends are other marks.
+fn is_inside(text: &str, delim: &str) -> bool {
+    let core = if delim.starts_with('*') {
+        text.trim_matches('*')
+    } else {
+        text
+    };
+    let flush = |c: Option<char>| c.is_none_or(|c| !c.is_whitespace());
+    flush(text.chars().next()) && flush(text.chars().next_back()) && !core.contains(delim)
+}
+
+/// The `[text](url)` around `sel`, taken off: replaced by its text, which is selected.
+fn unlink(source: &str, sel: &Range<usize>) -> Option<Edit> {
+    let mut from = 0;
+    while let Some(i) = source[from..].find('[').map(|i| from + i) {
+        from = i + 1;
+        let rest = &source[i + 1..];
+        let Some(mid) = rest.find("](") else { continue };
+        let text = &rest[..mid];
+        let url_rest = &rest[mid + 2..];
+        let Some(close) = url_rest.find(')') else {
+            continue;
+        };
+        if text.contains(['[', ']', '\n']) || url_rest[..close].contains(['\n', ' ']) {
+            continue;
+        }
+        let end = i + 1 + mid + 2 + close + 1;
+        if sel.start >= i && sel.end <= end {
+            return Some(Edit {
+                replace: i..end,
+                with: text.to_string(),
+                selection: i..i + text.len(),
+            });
+        }
+    }
+    None
+}
+
 fn toggle(source: &str, sel: Range<usize>, delim: &str) -> Edit {
     let d = delim.len();
     let star = delim.starts_with('*');
@@ -160,6 +205,7 @@ fn toggle(source: &str, sel: Range<usize>, delim: &str) -> Edit {
         && text.starts_with(delim)
         && text.ends_with(delim)
         && ok(star_run(text, false), star_run(text, true))
+        && is_inside(&text[d..text.len() - d], delim)
     {
         let inner = &text[d..text.len() - d];
         return Edit {
@@ -179,6 +225,7 @@ fn toggle(source: &str, sel: Range<usize>, delim: &str) -> Edit {
     if before.ends_with(delim)
         && after.starts_with(delim)
         && ok(star_run(before, true), star_run(after, false))
+        && is_inside(text, delim)
     {
         let at = start - d;
         return Edit {
@@ -296,6 +343,44 @@ mod tests {
         );
         assert_eq!(run("***a***", 3..4, Command::Strong), ("*a*".into(), 1..2));
         assert_eq!(run("*a*", 1..2, Command::Strong), ("***a***".into(), 3..4));
+    }
+
+    #[test]
+    fn two_spans_are_not_one_pair() {
+        for (src, cmd, want) in [
+            ("**a** **b**", Command::Strong, "****a** **b****"),
+            ("`a` `b`", Command::Code, "``a` `b``"),
+            ("~~a~~ ~~b~~", Command::Strikethrough, "~~~~a~~ ~~b~~~~"),
+        ] {
+            let (text, _) = run(src, 0..src.len(), cmd);
+            assert_eq!(text, want);
+        }
+    }
+
+    #[test]
+    fn neighbouring_spans_are_not_unwrapped() {
+        assert_eq!(run("a* b *c", 2..5, Command::Emphasis).0, "a** b **c");
+        assert_eq!(
+            run("**a** b **c**", 5..8, Command::Strong).0,
+            "**a**** b ****c**"
+        );
+    }
+
+    #[test]
+    fn link_toggles_off() {
+        let src = "see [this](url) ok";
+        assert_eq!(run(src, 4..15, Command::Link), ("see this ok".into(), 4..8));
+        assert_eq!(run(src, 6..6, Command::Link), ("see this ok".into(), 4..8));
+        assert_eq!(
+            run(src, 12..12, Command::Link),
+            ("see this ok".into(), 4..8)
+        );
+    }
+
+    #[test]
+    fn empty_selection_in_a_char_stays_a_point() {
+        assert_eq!(run("日", 1..1, Command::Code), ("`日`".into(), 1..1));
+        assert_eq!(command("日", 1..1, Command::Link).unwrap().replace, 0..3);
     }
 
     #[test]
