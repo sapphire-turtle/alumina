@@ -6,7 +6,8 @@ use alumina_markdown::egui::accesskit::Role;
 use alumina_markdown::egui::text::{CCursor, CCursorRange};
 use alumina_markdown::egui::text_edit::TextEditState;
 use alumina_markdown::egui::{
-    Event, Id, ImageSource, ImeEvent, Key, MissingGlyphPolicy, Modifiers, TextEdit,
+    Event, Id, ImageSource, ImeEvent, Key, MissingGlyphPolicy, Modifiers, PointerButton, Pos2,
+    TextEdit,
 };
 use alumina_markdown::{MarkdownEditor, MarkdownToolbar, ToolbarIcons, ToolbarLabels};
 use egui_kittest::Harness;
@@ -18,6 +19,9 @@ struct State {
     changed: bool,
     sections: usize,
     read_only: bool,
+    link: Option<String>,
+    galley: Option<std::sync::Arc<alumina_markdown::egui::Galley>>,
+    galley_pos: Pos2,
 }
 
 fn render(harness: &mut Harness<'_, impl Sized>, name: &str) {
@@ -43,6 +47,11 @@ fn editor(read_only: bool) -> Harness<'static, State> {
                 .show(ui);
             s.changed |= out.changed;
             s.sections = out.text_edit.galley.job.sections.len();
+            if out.link_clicked.is_some() {
+                s.link = out.link_clicked;
+            }
+            s.galley = Some(out.text_edit.galley.clone());
+            s.galley_pos = out.text_edit.galley_pos;
         },
         State {
             read_only,
@@ -633,4 +642,78 @@ fn toolbar_undo_restores_the_selection() {
     h.run();
     assert_eq!(h.state().text, "a b");
     assert_eq!(bar_selection(&h), 2..3);
+}
+
+/// The screen position of the middle of the cursor rect at char `at`.
+fn char_pos(h: &Harness<'_, State>, at: usize) -> Pos2 {
+    let s = h.state();
+    let galley = s.galley.as_ref().expect("a galley");
+    s.galley_pos + galley.pos_from_cursor(CCursor::new(at)).center().to_vec2()
+}
+
+/// Click at `pos` holding `modifiers`, over three frames as a pointer does.
+fn click_at(h: &mut Harness<'_, State>, pos: Pos2, modifiers: Modifiers) {
+    h.event(Event::ModifiersChanged(modifiers));
+    h.event(Event::PointerMoved(pos));
+    h.run();
+    for pressed in [true, false] {
+        h.event(Event::PointerButton {
+            pos,
+            button: PointerButton::Primary,
+            pressed,
+            modifiers,
+        });
+        h.run();
+    }
+    h.event(Event::ModifiersChanged(Modifiers::NONE));
+    h.run();
+}
+
+#[test]
+fn read_only_click_reports_link() {
+    let mut h = editor_with("[x](https://e.x)", true);
+    let pos = char_pos(&h, 1);
+    click_at(&mut h, pos, Modifiers::NONE);
+    assert_eq!(h.state().link.as_deref(), Some("https://e.x"));
+}
+
+#[test]
+fn editing_plain_click_places_cursor() {
+    let mut h = editor_with("[x](https://e.x)", false);
+    let pos = char_pos(&h, 1);
+    click_at(&mut h, pos, Modifiers::NONE);
+    assert_eq!(h.state().link, None);
+    assert_eq!(selection(&h), 1..1);
+}
+
+#[test]
+fn editing_command_click_reports_link() {
+    let mut h = editor_with("[x](https://e.x)", false);
+    let pos = char_pos(&h, 1);
+    click_at(&mut h, pos, Modifiers::COMMAND);
+    assert_eq!(h.state().link.as_deref(), Some("https://e.x"));
+}
+
+#[test]
+fn click_outside_a_link() {
+    let mut h = editor_with("plain [x](https://e.x)", true);
+    let pos = char_pos(&h, 2);
+    click_at(&mut h, pos, Modifiers::NONE);
+    assert_eq!(h.state().link, None);
+}
+
+#[test]
+fn click_right_of_a_line_ending_link() {
+    let mut h = editor_with("[x](https://e.x)\nnext", true);
+    let end = char_pos(&h, 16);
+    click_at(
+        &mut h,
+        end + alumina_markdown::egui::vec2(100.0, 0.0),
+        Modifiers::NONE,
+    );
+    assert_eq!(h.state().link, None);
+    // Control: on the link itself it does report.
+    let on = char_pos(&h, 3);
+    click_at(&mut h, on, Modifiers::NONE);
+    assert_eq!(h.state().link.as_deref(), Some("https://e.x"));
 }

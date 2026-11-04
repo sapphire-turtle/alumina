@@ -6,11 +6,13 @@ use std::ops::Range;
 use egui::cache::{ComputerMut, FrameCache};
 use egui::text::{CCursor, CCursorRange, LayoutJob};
 use egui::text_edit::{TextEditOutput, TextEditState};
-use egui::{Context, Event, FocusDirection, Id, ImeEvent, Key, Modifiers, TextEdit, Ui};
+use egui::{
+    Context, CursorIcon, Event, FocusDirection, Id, ImeEvent, Key, Modifiers, TextEdit, Ui,
+};
 
 use crate::commands::{Command, Edit, command, indent, newline};
 use crate::layout::layout;
-use crate::parse::{BlockKind, parse};
+use crate::parse::{BlockKind, InlineKind, parse};
 use crate::style::MarkdownStyle;
 
 /// The byte offset of char `c` in `s`; past the end, `s.len()`.
@@ -219,11 +221,13 @@ fn take_ime_enters(events: &mut Vec<Event>, mut composing: bool) -> (bool, bool)
 #[derive(Default)]
 struct JobComputer;
 
-/// One parse: the job, and the byte offsets of the thematic breaks to draw.
+/// One parse: the job, the byte offsets of the thematic breaks to draw, and the links
+/// (byte range and destination) to click.
 #[derive(Clone)]
 struct Rendered {
     job: LayoutJob,
     rules: Vec<usize>,
+    links: Vec<(Range<usize>, String)>,
 }
 
 impl<'a> ComputerMut<(&'a str, &'a MarkdownStyle, u32), Rendered> for JobComputer {
@@ -235,7 +239,16 @@ impl<'a> ComputerMut<(&'a str, &'a MarkdownStyle, u32), Rendered> for JobCompute
             .filter(|b| b.kind == BlockKind::ThematicBreak)
             .map(|b| b.range.start)
             .collect();
+        let links = doc
+            .inlines
+            .iter()
+            .filter_map(|i| match &i.kind {
+                InlineKind::Link { url, .. } => Some((i.range.clone(), url.clone())),
+                _ => None,
+            })
+            .collect();
         Rendered {
+            links,
             job: layout(text, &doc, style, f32::from_bits(width)),
             rules,
         }
@@ -303,6 +316,7 @@ impl<'t> MarkdownEditor<'t> {
             .unwrap_or_else(|| MarkdownStyle::from_visuals(ui.visuals()));
         // Set by each call of the layouter, so the last one (after any edit) wins.
         let mut rules = Vec::new();
+        let mut links = Vec::new();
         let mut layouter = |ui: &Ui, buf: &dyn egui::TextBuffer, wrap_width: f32| {
             let rendered = ui.memory_mut(|m| {
                 m.caches
@@ -311,6 +325,7 @@ impl<'t> MarkdownEditor<'t> {
                     .clone()
             });
             rules = rendered.rules;
+            links = rendered.links;
             ui.fonts_mut(|f| f.layout_job(rendered.job))
         };
 
@@ -339,13 +354,53 @@ impl<'t> MarkdownEditor<'t> {
             text_edit.response.mark_changed();
         }
         paint_rules(ui, &text_edit, self.text.as_str(), &rules);
+        let link_clicked =
+            link_at_pointer(ui, &text_edit, self.text.as_str(), &links, self.read_only);
         MarkdownOutput {
             // A read-only view reports the keys it ignored as changes.
             changed: !self.read_only && text_edit.response.changed(),
-            link_clicked: None,
+            link_clicked,
             text_edit,
         }
     }
+}
+
+/// The destination of the link under the pointer where a click would report it (always when
+/// `read_only`, else with the command key held): sets the pointing hand, and returns the link
+/// if this frame's click is on it.
+fn link_at_pointer(
+    ui: &Ui,
+    out: &TextEditOutput,
+    source: &str,
+    links: &[(Range<usize>, String)],
+    read_only: bool,
+) -> Option<String> {
+    if links.is_empty() || !(read_only || ui.input(|i| i.modifiers.command)) {
+        return None;
+    }
+    let response = &out.response;
+    let pointer = response.hover_pos()?;
+    let galley = &out.galley;
+    let rel = pointer - out.galley_pos;
+    // The nearest cursor exists even in the empty space right of a row: the pointer must be
+    // over the text.
+    if !galley.rows.iter().any(|r| r.rect().contains(rel.to_pos2())) {
+        return None;
+    }
+    let cursor = galley.cursor_from_pos(rel);
+    // The cursor is the nearest edge: left of it, the pointer is on the char before.
+    let mut at = cursor.index.0;
+    if at > 0 && rel.x < galley.pos_from_cursor(cursor).min.x {
+        at -= 1;
+    }
+    let byte = char_to_byte(source, at);
+    let url = links
+        .iter()
+        .find(|(range, _)| range.contains(&byte))
+        .map(|(_, url)| url)?;
+    ui.output_mut(|o| o.cursor_icon = CursorIcon::PointingHand);
+    // `clicked` is the primary button.
+    response.clicked().then(|| url.clone())
 }
 
 /// Draws a line through the row of each thematic break, given by byte offset.
@@ -391,6 +446,13 @@ mod tests {
         let r = JobComputer.compute(("a\n\n---\n", &style, 100.0f32.to_bits()));
         assert_eq!(r.rules, vec![3]);
         assert_eq!(r.job.text, "a\n\n---\n");
+    }
+
+    #[test]
+    fn the_cached_value_carries_the_links() {
+        let style = MarkdownStyle::from_visuals(&egui::Visuals::dark());
+        let r = JobComputer.compute(("a [x](u) b", &style, 100.0f32.to_bits()));
+        assert_eq!(r.links, vec![(2..8, "u".to_string())]);
     }
 
     #[test]
