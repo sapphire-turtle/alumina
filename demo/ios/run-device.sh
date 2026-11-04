@@ -35,7 +35,10 @@ for d in json.load(open(sys.argv[1]))["result"]["devices"]:
 fi
 echo "run-device: device=$DEVICE"
 
-[ -d AluminaDemo.xcodeproj ] || xcodegen generate
+# Regenerates the project whenever project.yml has changed since the last run (XcodeGen's
+# cache), so a project made before a change to the spec (an asset catalog added, say) is
+# not built stale.
+xcodegen generate --use-cache
 
 configuration="${CONFIGURATION:-Debug}"
 # -allowProvisioningUpdates lets Xcode register the device and make the profile itself.
