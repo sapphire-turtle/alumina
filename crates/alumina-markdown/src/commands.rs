@@ -18,6 +18,10 @@ pub struct Edit {
 
 impl Edit {
     /// Apply the replacement to `text`.
+    ///
+    /// `text` must be the source the edit was made from (by [`command`], [`newline`] or
+    /// [`indent`]): on any other text the range may be out of bounds or off a char
+    /// boundary, and this panics.
     pub fn apply(&self, text: &mut String) {
         text.replace_range(self.replace.clone(), &self.with);
     }
@@ -153,23 +157,41 @@ fn is_inside(text: &str, delim: &str) -> bool {
     flush(text.chars().next()) && flush(text.chars().next_back()) && !core.contains(delim)
 }
 
-/// The `[text](url)` around `sel`, taken off: replaced by its text, which is selected.
+/// The `[text](url)` around `sel`, taken off: replaced by its text, which is selected. An
+/// image (`![alt](src)`) is not a link here.
+///
+/// A link holds no line break, so only the line of `sel` is read.
 fn unlink(source: &str, sel: &Range<usize>) -> Option<Edit> {
-    let mut from = 0;
-    while let Some(i) = source[from..].find('[').map(|i| from + i) {
+    let line_start = source[..sel.start].rfind('\n').map_or(0, |i| i + 1);
+    let line_end = source[sel.start..]
+        .find('\n')
+        .map_or(source.len(), |i| sel.start + i);
+    if sel.end > line_end {
+        return None;
+    }
+    let line = &source[..line_end];
+    let mut from = line_start;
+    while let Some(i) = line[from..].find('[').map(|i| from + i) {
+        // A link starting past the selection cannot hold it.
+        if i > sel.start {
+            break;
+        }
         from = i + 1;
-        let rest = &source[i + 1..];
+        if source[..i].ends_with('!') {
+            continue;
+        }
+        let rest = &line[i + 1..];
         let Some(mid) = rest.find("](") else { continue };
         let text = &rest[..mid];
         let url_rest = &rest[mid + 2..];
         let Some(close) = url_rest.find(')') else {
             continue;
         };
-        if text.contains(['[', ']', '\n']) || url_rest[..close].contains(['\n', ' ']) {
+        if text.contains(['[', ']']) || url_rest[..close].contains(' ') {
             continue;
         }
         let end = i + 1 + mid + 2 + close + 1;
-        if sel.start >= i && sel.end <= end {
+        if sel.end <= end {
             return Some(Edit {
                 replace: i..end,
                 with: text.to_string(),
@@ -390,6 +412,27 @@ mod tests {
             run(src, 12..12, Command::Link),
             ("see this ok".into(), 4..8)
         );
+    }
+
+    #[test]
+    fn link_does_not_take_an_image_off() {
+        // Not `!a`: the word is linked, as anywhere else.
+        let (text, _) = run("![a](b)", 3..3, Command::Link);
+        assert_eq!(text, "![[a](url)](b)");
+        // A link beside an image is still taken off.
+        assert_eq!(
+            run("![i](j) [a](b)", 9..9, Command::Link),
+            ("![i](j) a".into(), 8..9)
+        );
+    }
+
+    #[test]
+    fn link_is_taken_off_with_many_brackets_above() {
+        let mut src = "- [ ] item\n".repeat(5_000);
+        src.push_str("see [this](url) ok");
+        let at = src.len() - 8;
+        let (text, _) = run(&src, at..at, Command::Link);
+        assert!(text.ends_with("see this ok"));
     }
 
     #[test]
