@@ -5,8 +5,9 @@ description = "A Markdown editor for egui that formats as you type"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-# Not released until the editor is (#1).
-publish = false
+readme = "README.md"
+keywords = ["egui", "markdown", "editor", "wysiwyg", "gui"]
+categories = ["gui", "text-editors"]
 
 [dependencies]
 egui = { workspace = true }

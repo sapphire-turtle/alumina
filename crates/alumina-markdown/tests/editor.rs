@@ -717,3 +717,23 @@ fn click_right_of_a_line_ending_link() {
     click_at(&mut h, on, Modifiers::NONE);
     assert_eq!(h.state().link.as_deref(), Some("https://e.x"));
 }
+
+#[test]
+fn read_only_copies() {
+    use alumina_markdown::egui::OutputCommand;
+    let mut h = editor_with("# a", true);
+    h.event(key(Modifiers::COMMAND, Key::A));
+    h.step();
+    h.event(Event::Copy);
+    h.step();
+    let copied = h
+        .output()
+        .platform_output
+        .commands
+        .iter()
+        .find_map(|c| match c {
+            OutputCommand::CopyText(t) => Some(t.clone()),
+            _ => None,
+        });
+    assert_eq!(copied.as_deref(), Some("# a"));
+}
