@@ -6,7 +6,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 readme = "README.md"
-keywords = ["egui", "markdown", "editor", "wysiwyg", "gui"]
+keywords = ["egui", "markdown", "editor", "text-editor", "gui"]
 categories = ["gui", "text-editors"]
 
 [dependencies]

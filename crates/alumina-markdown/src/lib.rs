@@ -8,7 +8,7 @@
 //!   be selected and copied). It reports a link clicked and leaves opening it to the app.
 //! - [`MarkdownToolbar`]: a row of buttons for the same commands as the shortcuts, placed by
 //!   the app and tied to an editor by its `egui::Id`. Labels are replaceable; the icons are
-//!   the app's own ([`ToolbarIcons`]).
+//!   the app's own ([`ToolbarIcons`]); screen readers read [`ToolbarNames`].
 //! - [`command`], [`indent`] and [`newline`]: the edits behind both, as functions on a
 //!   source and a selection, with no egui in them.
 //! - [`parse`], [`MarkdownStyle`] and [`layout`]: the source read into blocks and marks, and
@@ -30,6 +30,8 @@
 //!     }
 //! }
 //! ```
+
+#![warn(missing_docs)]
 
 mod commands;
 mod editor;

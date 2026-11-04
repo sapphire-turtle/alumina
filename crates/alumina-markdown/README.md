@@ -9,15 +9,17 @@ selection, the IME and undo are egui's own.
 - **`MarkdownEditor`**: the editor. With `.read_only(true)` it is the same view, not
   editable, but its text can still be selected and copied.
 - **`MarkdownToolbar`**: a row of buttons for the shortcuts' commands, placed by your app.
-- **`parse`**, **`layout`**, **`MarkdownStyle`**, **`command`**: the pieces behind them, for
-  reading a source into blocks and marks, or editing one, without egui.
+- **`parse`** and **`command`**: the pieces behind them, for reading a source into blocks
+  and marks, or editing one, with no egui widget. **`layout`** and **`MarkdownStyle`** turn
+  a parsed source into an egui `LayoutJob`.
 
 ```rust
 use alumina_markdown::{MarkdownEditor, MarkdownToolbar, egui};
 
-fn note(ui: &mut egui::Ui, text: &mut String, read_only: bool) {
-    // The toolbar finds the editor's selection by its id: give both the same one.
-    let id = egui::Id::unique("note");
+fn note(ui: &mut egui::Ui, note_id: u64, text: &mut String, read_only: bool) {
+    // The toolbar finds the editor's selection by its id: give both the same one, and
+    // each note its own. An editor with no toolbar needs no id.
+    let id = ui.make_persistent_id(("note", note_id));
     if !read_only {
         MarkdownToolbar::new(text, id).show(ui);
     }
@@ -57,9 +59,10 @@ already. Enter that commits an IME conversion is the IME's: it never also contin
 
 ## Icons
 
-The toolbar's buttons are labelled in ASCII, and `ToolbarLabels` is yours to translate.
-alumina ships no icons: give a button an `egui::ImageSource` with `ToolbarIcons`, and its
-label then names it for screen readers.
+The toolbar's buttons are labelled in ASCII (`ToolbarLabels`), and named for screen readers
+and hover text in English (`ToolbarNames`, "Bold", "Bulleted list"): both are yours to
+translate, as is the editor's own name (`MarkdownEditor::accessible_label`). alumina ships no
+icons: give a button an `egui::ImageSource` with `ToolbarIcons`.
 
 ## Not yet
 

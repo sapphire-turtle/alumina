@@ -29,6 +29,7 @@ impl Edit {
 
 /// Something the editor can do to the selection.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Command {
     /// `**bold**`.
     Strong,

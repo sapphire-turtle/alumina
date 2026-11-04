@@ -12,3 +12,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(alumina-markdown)* `MarkdownEditor`, a Markdown editor that formats as you type, and a read-only view with the same look
 - *(alumina-markdown)* shortcuts, Enter and Tab in lists, and `MarkdownToolbar`
 - *(alumina-markdown)* link clicks reported to the app
+- *(alumina-markdown)* accessible names for the editor and the toolbar's buttons (`ToolbarNames`)

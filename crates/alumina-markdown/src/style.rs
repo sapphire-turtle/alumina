@@ -7,8 +7,10 @@ use egui::{Color32, FontFamily, FontId, Visuals};
 /// Fonts and colours for [`layout`](crate::layout).
 ///
 /// Plain data: change a field to restyle. [`from_visuals`](Self::from_visuals) gives the
-/// defaults for the current theme.
+/// defaults for the current theme, and is what to start from; `Default` is that of egui's
+/// default visuals.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct MarkdownStyle {
     /// The font of text.
     pub body: FontId,
@@ -16,13 +18,17 @@ pub struct MarkdownStyle {
     pub monospace: FontId,
     /// The font size of headings of level 1 to 6.
     pub heading_sizes: [f32; 6],
+    /// The colour of text.
     pub text_color: Color32,
     /// The colour of strong text and headings. egui ships no bold face.
     pub strong_color: Color32,
     /// The colour of marks: `#`, `*`, backticks, fences, bullets.
     pub mark_color: Color32,
+    /// The colour of link text, which is also underlined.
     pub link_color: Color32,
+    /// The colour of text in a block quote.
     pub quote_color: Color32,
+    /// The background of inline code and code blocks.
     pub code_background: Color32,
 }
 
@@ -40,6 +46,13 @@ impl MarkdownStyle {
             quote_color: visuals.weak_text_color(),
             code_background: visuals.code_bg_color,
         }
+    }
+}
+
+impl Default for MarkdownStyle {
+    /// [`from_visuals`](Self::from_visuals) of `Visuals::default()`; prefer the `ui`'s.
+    fn default() -> Self {
+        Self::from_visuals(&Visuals::default())
     }
 }
 
