@@ -9,6 +9,7 @@
 //! - [`Indent`]: the unit of indentation, a tab or some spaces, `Spaces(4)` by default.
 //! - [`newline`]: Enter, which keeps the indentation, goes a level in after an opener and
 //!   puts a closer between brackets on a line of its own.
+//! - [`indent`], [`outdent`] and [`backspace`]: Tab, Shift+Tab and Backspace.
 //! - [`close`]: a closing bracket typed on a blank indented line, which comes out a level.
 //! - [`Edit`]: what they return.
 
@@ -17,4 +18,4 @@
 mod indent;
 
 pub use egui;
-pub use indent::{Edit, Indent, close, newline};
+pub use indent::{Edit, Indent, backspace, close, indent, newline, outdent};

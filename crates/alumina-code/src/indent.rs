@@ -174,6 +174,191 @@ pub fn close(source: &str, selection: Range<usize>, closer: char, indent: Indent
     })
 }
 
+/// One line of the source: where it starts, where its text ends (before a `\r`) and where
+/// the line ends (before its `\n`).
+struct Line {
+    start: usize,
+    text_end: usize,
+    end: usize,
+}
+
+/// The lines the selection touches: from the line of its start to the line of its end,
+/// leaving out the line of the end when that is at its start and the selection is not empty.
+fn touched_lines(source: &str, sel: &Range<usize>) -> Vec<Line> {
+    let first = line_start(source, sel.start);
+    let at_start = sel.end > sel.start && source[..sel.end].ends_with('\n');
+    let last = if at_start {
+        line_start(source, sel.end - 1)
+    } else {
+        line_start(source, sel.end)
+    };
+    let mut lines = Vec::new();
+    let mut start = first;
+    loop {
+        let end = source[start..]
+            .find('\n')
+            .map_or(source.len(), |i| start + i);
+        let text_end = if source[start..end].ends_with('\r') {
+            end - 1
+        } else {
+            end
+        };
+        lines.push(Line {
+            start,
+            text_end,
+            end,
+        });
+        if start >= last {
+            break;
+        }
+        start = end + 1;
+    }
+    lines
+}
+
+/// Tab with `selection` selected: over one line, the spaces (or tab) up to the next stop
+/// replace the selection; over two lines or more, each line that is not blank goes a level
+/// in. `None` when there is nothing to indent.
+pub fn indent(source: &str, selection: Range<usize>, indent: Indent) -> Option<Edit> {
+    let sel = clamp(source, selection);
+    let lines = touched_lines(source, &sel);
+    if lines.len() == 1 {
+        let before = &source[lines[0].start..sel.start];
+        let column: usize = before
+            .chars()
+            .map(|c| if c == '\t' { TAB } else { 1 })
+            .sum();
+        let with = match indent {
+            Indent::Tab => "\t".to_owned(),
+            Indent::Spaces(_) => " ".repeat(indent.width() - column % indent.width()),
+        };
+        let cursor = sel.start + with.len();
+        return Some(Edit {
+            replace: sel,
+            with,
+            selection: cursor..cursor,
+        });
+    }
+    let unit = indent.unit();
+    let indented: Vec<bool> = lines
+        .iter()
+        .map(|l| !source[l.start..l.text_end].chars().all(is_blank))
+        .collect();
+    if !indented.contains(&true) {
+        return None;
+    }
+    let from = lines[0].start;
+    let to = lines[lines.len() - 1].end;
+    let mut with = String::new();
+    for (i, (line, &go)) in lines.iter().zip(&indented).enumerate() {
+        if i > 0 {
+            with.push_str(&source[lines[i - 1].text_end..line.start]);
+        }
+        if go {
+            with.push_str(&unit);
+        }
+        with.push_str(&source[line.start..line.text_end]);
+    }
+    with.push_str(&source[lines[lines.len() - 1].text_end..to]);
+    let shift = |p: usize| {
+        let added: usize = lines
+            .iter()
+            .zip(&indented)
+            .filter(|(l, go)| **go && l.start < p)
+            .count()
+            * unit.len();
+        p + added
+    };
+    Some(Edit {
+        replace: from..to,
+        with,
+        selection: shift(sel.start)..shift(sel.end),
+    })
+}
+
+/// How many bytes of indentation Shift+Tab takes off a line with this text.
+fn outdent_len(text: &str, indent: Indent) -> usize {
+    if text.starts_with('\t') {
+        return 1;
+    }
+    let spaces = text.len() - text.trim_start_matches(' ').len();
+    spaces.min(indent.width())
+}
+
+/// Shift+Tab with `selection` selected: the edit that takes a level off the start of each
+/// line it touches. `None` when none of them has indentation.
+pub fn outdent(source: &str, selection: Range<usize>, indent: Indent) -> Option<Edit> {
+    let sel = clamp(source, selection);
+    let lines = touched_lines(source, &sel);
+    let removed: Vec<usize> = lines
+        .iter()
+        .map(|l| outdent_len(&source[l.start..l.text_end], indent))
+        .collect();
+    if removed.iter().all(|&r| r == 0) {
+        return None;
+    }
+    let shift = |p: usize| {
+        let mut p_new = p;
+        for (l, &r) in lines.iter().zip(&removed) {
+            if l.start < p {
+                p_new -= r.min(p - l.start);
+            }
+        }
+        p_new
+    };
+    let selection = shift(sel.start)..shift(sel.end);
+    if lines.len() == 1 {
+        let from = lines[0].start;
+        return Some(Edit {
+            replace: from..from + removed[0],
+            with: String::new(),
+            selection,
+        });
+    }
+    let last = &lines[lines.len() - 1];
+    let mut with = String::new();
+    for (i, (line, &r)) in lines.iter().zip(&removed).enumerate() {
+        if i > 0 {
+            with.push_str(&source[lines[i - 1].text_end..line.start]);
+        }
+        with.push_str(&source[line.start + r..line.text_end]);
+    }
+    with.push_str(&source[last.text_end..last.end]);
+    Some(Edit {
+        replace: lines[0].start..last.end,
+        with,
+        selection,
+    })
+}
+
+/// Backspace with a cursor in the spaces that start its line: the edit that takes it back
+/// to the previous multiple of the level's width. `None` otherwise (and always for
+/// [`Indent::Tab`]), and the editor lets egui delete.
+pub fn backspace(source: &str, selection: Range<usize>, indent: Indent) -> Option<Edit> {
+    if indent == Indent::Tab {
+        return None;
+    }
+    let sel = clamp(source, selection);
+    if sel.start != sel.end {
+        return None;
+    }
+    let cursor = sel.start;
+    let before = &source[line_start(source, cursor)..cursor];
+    if before.is_empty() || !before.chars().all(|c| c == ' ') {
+        return None;
+    }
+    let width = indent.width();
+    let back = match before.len() % width {
+        0 => width,
+        n => n,
+    };
+    Some(Edit {
+        replace: cursor - back..cursor,
+        with: String::new(),
+        selection: cursor - back..cursor - back,
+    })
+}
+
 /// Sort, clamp to the text and move onto char boundaries (outwards).
 fn clamp(source: &str, sel: Range<usize>) -> Range<usize> {
     let (a, b) = if sel.start <= sel.end {
@@ -287,6 +472,91 @@ mod tests {
             close("  ", 2..2, '}', Indent::Spaces(0)),
             Some(ed(1..2, "}", 2..2))
         );
+    }
+    #[test]
+    fn tab_inserts_up_to_the_next_stop() {
+        assert_eq!(indent("ab", 1..1, S4), Some(ed(1..1, "   ", 4..4)));
+        assert_eq!(indent("ab", 0..0, S4), Some(ed(0..0, "    ", 4..4)));
+        assert_eq!(indent("日本", 6..6, S4), Some(ed(6..6, "  ", 8..8)));
+        assert_eq!(indent("\tx", 2..2, S4), Some(ed(2..2, "   ", 5..5))); // column 5
+        assert_eq!(indent("abc", 1..2, S4), Some(ed(1..2, "   ", 4..4)));
+        assert_eq!(indent("ab", 1..1, Indent::Tab), Some(ed(1..1, "\t", 2..2)));
+    }
+    #[test]
+    fn tab_over_lines_indents_each_but_the_blank() {
+        assert_eq!(
+            indent("a\nb\n\nc", 0..6, S4),
+            Some(ed(0..6, "    a\n    b\n\n    c", 0..18))
+        );
+        assert_eq!(
+            indent("a\n  \nb", 0..6, Indent::Tab),
+            Some(ed(0..6, "\ta\n  \n\tb", 0..8))
+        );
+    }
+    #[test]
+    fn tab_leaves_a_line_the_selection_only_reaches() {
+        assert_eq!(
+            indent("a\nb\nc", 0..4, S4),
+            Some(ed(0..3, "    a\n    b", 0..12))
+        );
+        assert_eq!(
+            indent("a\nb\nc", 1..4, S4),
+            Some(ed(0..3, "    a\n    b", 5..12))
+        );
+    }
+    #[test]
+    fn tab_over_blank_lines_only_does_nothing() {
+        assert_eq!(indent("\n\n", 0..2, S4), None);
+    }
+    #[test]
+    fn tab_over_crlf_lines() {
+        assert_eq!(
+            indent("a\r\nb", 0..4, S4),
+            Some(ed(0..4, "    a\r\n    b", 0..12))
+        );
+    }
+    #[test]
+    fn shift_tab_takes_a_level_off_each_line() {
+        assert_eq!(outdent("    a", 5..5, S4), Some(ed(0..4, "", 1..1)));
+        assert_eq!(outdent("  a", 3..3, S4), Some(ed(0..2, "", 1..1)));
+        assert_eq!(outdent("      a", 7..7, S4), Some(ed(0..4, "", 3..3)));
+        assert_eq!(outdent("\ta", 2..2, S4), Some(ed(0..1, "", 1..1)));
+        assert_eq!(
+            outdent("      a", 7..7, Indent::Tab),
+            Some(ed(0..4, "", 3..3))
+        );
+        assert_eq!(outdent("    a", 2..2, S4), Some(ed(0..4, "", 0..0))); // inside the indent
+        assert_eq!(
+            outdent("    a\n  b\nc", 0..11, S4),
+            Some(ed(0..11, "a\nb\nc", 0..5))
+        );
+        assert_eq!(
+            outdent("  日本\n  x", 2..11, S4),
+            Some(ed(0..12, "日本\nx", 0..7))
+        );
+    }
+    #[test]
+    fn shift_tab_on_unindented_lines_does_nothing() {
+        assert_eq!(outdent("a\nb", 0..3, S4), None);
+    }
+    #[test]
+    fn backspace_in_the_indentation_takes_a_level() {
+        assert_eq!(backspace("        ", 8..8, S4), Some(ed(4..8, "", 4..4)));
+        assert_eq!(backspace("      x", 6..6, S4), Some(ed(4..6, "", 4..4)));
+        assert_eq!(backspace("    x", 4..4, S4), Some(ed(0..4, "", 0..0)));
+        assert_eq!(backspace(" ", 1..1, S4), Some(ed(0..1, "", 0..0)));
+        assert_eq!(
+            backspace("a\n      ", 8..8, Indent::Spaces(2)),
+            Some(ed(6..8, "", 6..6))
+        );
+    }
+    #[test]
+    fn backspace_elsewhere_is_egui_s() {
+        assert_eq!(backspace("  a  ", 5..5, S4), None);
+        assert_eq!(backspace("\t  ", 3..3, S4), None);
+        assert_eq!(backspace("    ", 4..4, Indent::Tab), None);
+        assert_eq!(backspace("    ", 0..4, S4), None);
+        assert_eq!(backspace("    ", 0..0, S4), None);
     }
     #[cfg(feature = "serde")]
     #[test]
