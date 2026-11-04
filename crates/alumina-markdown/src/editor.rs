@@ -221,8 +221,8 @@ fn take_ime_enters(events: &mut Vec<Event>, mut composing: bool) -> (bool, bool)
 #[derive(Default)]
 struct JobComputer;
 
-/// One parse: the job, the byte offsets of the thematic breaks to draw, and the links
-/// (byte range and destination) to click.
+/// One parse: the job, the char indices of the thematic breaks to draw, in order, and the
+/// links (byte range and destination) to click.
 #[derive(Clone)]
 struct Rendered {
     job: LayoutJob,
@@ -233,12 +233,13 @@ struct Rendered {
 impl<'a> ComputerMut<(&'a str, &'a MarkdownStyle, u32), Rendered> for JobComputer {
     fn compute(&mut self, (text, style, width): (&'a str, &'a MarkdownStyle, u32)) -> Rendered {
         let doc = parse(text);
-        let rules = doc
+        let starts: Vec<usize> = doc
             .blocks
             .iter()
             .filter(|b| b.kind == BlockKind::ThematicBreak)
             .map(|b| b.range.start)
             .collect();
+        let rules = byte_starts_to_chars(text, &starts);
         let links = doc
             .inlines
             .iter()
@@ -353,7 +354,7 @@ impl<'t> MarkdownEditor<'t> {
         if edited {
             text_edit.response.mark_changed();
         }
-        paint_rules(ui, &text_edit, self.text.as_str(), &rules);
+        paint_rules(ui, &text_edit, &rules);
         let link_clicked =
             link_at_pointer(ui, &text_edit, self.text.as_str(), &links, self.read_only);
         MarkdownOutput {
@@ -403,15 +404,51 @@ fn link_at_pointer(
     response.clicked().then(|| url.clone())
 }
 
-/// Draws a line through the row of each thematic break, given by byte offset.
-fn paint_rules(ui: &Ui, out: &TextEditOutput, source: &str, rules: &[usize]) {
+/// The char indices of the byte offsets `starts`, in ascending order, in one pass over `s`.
+fn byte_starts_to_chars(s: &str, starts: &[usize]) -> Vec<usize> {
+    let mut chars = s.char_indices().map(|(b, _)| b).enumerate();
+    starts
+        .iter()
+        .map(|&start| {
+            chars
+                .by_ref()
+                .find(|&(_, b)| b >= start)
+                .map_or(s.chars().count(), |(c, _)| c)
+        })
+        .collect()
+}
+
+/// The y, in the galley, of the middle of the row holding each char index of `rules`, in
+/// ascending order: what `pos_from_cursor` gives, in one pass over the rows rather than one
+/// per rule.
+fn rule_ys(galley: &egui::Galley, rules: &[usize]) -> Vec<f32> {
+    let mut ys = Vec::with_capacity(rules.len());
+    let mut rules = rules.iter().peekable();
+    let mut start = 0;
+    for row in &galley.rows {
+        let end = start + row.char_count_excluding_newline().0;
+        while let Some(&&c) = rules.peek() {
+            if c > end {
+                break;
+            }
+            ys.push((row.min_y() + row.max_y()) / 2.0);
+            rules.next();
+        }
+        start += row.char_count_including_newline().0;
+    }
+    ys
+}
+
+/// Draws a line through the row of each thematic break in view, given by char index.
+fn paint_rules(ui: &Ui, out: &TextEditOutput, rules: &[usize]) {
     let stroke = ui.visuals().widgets.noninteractive.bg_stroke;
     let clip = out.text_clip_rect;
     let painter = ui.painter_at(clip);
-    for &start in rules {
-        let at = CCursor::new(byte_to_char(source, start));
-        let y = out.galley_pos.y + out.galley.pos_from_cursor(at).center().y;
-        painter.hline(clip.x_range(), y, stroke);
+    for y in rule_ys(&out.galley, rules) {
+        let y = out.galley_pos.y + y;
+        if clip.y_range().contains(y) {
+            painter.hline(clip.x_range(), y, stroke);
+        }
     }
 }
 
@@ -453,6 +490,35 @@ mod tests {
         let style = MarkdownStyle::from_visuals(&egui::Visuals::dark());
         let r = JobComputer.compute(("a [x](u) b", &style, 100.0f32.to_bits()));
         assert_eq!(r.links, vec![(2..8, "u".to_string())]);
+    }
+
+    #[test]
+    fn the_rules_are_char_indices() {
+        let style = MarkdownStyle::from_visuals(&egui::Visuals::dark());
+        let r = JobComputer.compute(("日本\n\n---\n🎌\n\n***\n", &style, 100.0f32.to_bits()));
+        assert_eq!(r.rules, vec![4, 11]);
+    }
+
+    #[test]
+    fn rule_ys_match_the_cursor_positions() {
+        let source = "# a\n\n---\n\nsome text that wraps over more than one row of the galley\n\n***\n\n- b\n\n___";
+        let style = MarkdownStyle::from_visuals(&egui::Visuals::dark());
+        let r = JobComputer.compute((source, &style, 60.0f32.to_bits()));
+        assert_eq!(r.rules.len(), 3);
+        let ctx = Context::default();
+        let mut galley = None;
+        let mut output = ctx.run_ui(Default::default(), |ui| {
+            galley = Some(ui.fonts_mut(|f| f.layout_job(r.job.clone())));
+        });
+        output.textures_delta.clear();
+        let galley = galley.unwrap();
+        assert!(galley.rows.len() > 6, "the text must wrap");
+        let want: Vec<f32> = r
+            .rules
+            .iter()
+            .map(|&c| galley.pos_from_cursor(CCursor::new(c)).center().y)
+            .collect();
+        assert_eq!(rule_ys(&galley, &r.rules), want);
     }
 
     #[test]
