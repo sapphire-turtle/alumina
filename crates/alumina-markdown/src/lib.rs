@@ -8,6 +8,7 @@ mod editor;
 mod layout;
 mod parse;
 mod style;
+mod toolbar;
 
 pub use commands::{Command, Edit, command, indent, newline};
 pub use editor::{MarkdownEditor, MarkdownOutput};
@@ -15,3 +16,4 @@ pub use egui;
 pub use layout::layout;
 pub use parse::{Block, BlockKind, Doc, Inline, InlineKind, parse};
 pub use style::MarkdownStyle;
+pub use toolbar::{MarkdownToolbar, ToolbarIcons, ToolbarLabels};

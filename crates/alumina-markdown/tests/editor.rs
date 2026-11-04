@@ -2,11 +2,13 @@
 //!
 //! With `ALUMINA_RENDER_DIR` set, each test also renders its window there as a PNG.
 
-use alumina_markdown::MarkdownEditor;
 use alumina_markdown::egui::accesskit::Role;
 use alumina_markdown::egui::text::{CCursor, CCursorRange};
 use alumina_markdown::egui::text_edit::TextEditState;
-use alumina_markdown::egui::{Event, Id, ImeEvent, Key, MissingGlyphPolicy, Modifiers, TextEdit};
+use alumina_markdown::egui::{
+    Event, Id, ImageSource, ImeEvent, Key, MissingGlyphPolicy, Modifiers, TextEdit,
+};
+use alumina_markdown::{MarkdownEditor, MarkdownToolbar, ToolbarIcons, ToolbarLabels};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable as _;
 
@@ -406,4 +408,129 @@ fn enter_with_no_cursor_acts_at_the_end() {
     h.key_press(Key::Enter);
     h.run();
     assert_eq!(h.state().text, "- a\n- ");
+}
+
+const SVG: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><path d="M3 2h6a3 3 0 0 1 0 6H3z" fill="none" stroke="currentColor"/></svg>"#;
+
+#[derive(Default)]
+struct BarState {
+    text: String,
+    labels: Option<ToolbarLabels>,
+    icons: Option<ToolbarIcons>,
+    changed: bool,
+}
+
+fn with_toolbar(
+    text: &str,
+    labels: Option<ToolbarLabels>,
+    icons: Option<ToolbarIcons>,
+) -> Harness<'static, BarState> {
+    let mut h = Harness::builder().with_size([600.0, 300.0]).build_ui_state(
+        |ui, s: &mut BarState| {
+            ui.ctx().set_missing_glyph_policy(MissingGlyphPolicy::Tofu);
+            egui_extras::install_image_loaders(ui.ctx());
+            let id = Id::unique(ID);
+            let mut bar = MarkdownToolbar::new(&mut s.text, id);
+            if let Some(l) = s.labels.clone() {
+                bar = bar.labels(l);
+            }
+            if let Some(i) = s.icons.clone() {
+                bar = bar.icons(i);
+            }
+            s.changed |= bar.show(ui).changed();
+            MarkdownEditor::new(&mut s.text).id(id).show(ui);
+        },
+        BarState {
+            text: text.to_owned(),
+            labels,
+            icons,
+            changed: false,
+        },
+    );
+    h.get_by_role(Role::MultilineTextInput).click();
+    h.run();
+    h
+}
+
+fn bar_selection(h: &Harness<'_, BarState>) -> std::ops::Range<usize> {
+    let state = TextEditState::load(&h.ctx, Id::unique(ID)).expect("a state");
+    let [a, b] = state
+        .cursor
+        .char_range()
+        .expect("a cursor")
+        .sorted_cursors();
+    a.index.0..b.index.0
+}
+
+fn select_bar(h: &mut Harness<'_, BarState>, start: usize, end: usize) {
+    let ctx = h.ctx.clone();
+    let id = Id::unique(ID);
+    let mut state = TextEditState::load(&ctx, id).unwrap_or_default();
+    state.cursor.set_char_range(Some(CCursorRange::two(
+        CCursor::new(start),
+        CCursor::new(end),
+    )));
+    state.store(&ctx, id);
+    h.run();
+}
+
+#[test]
+fn toolbar_strong_wraps_the_selection_and_refocuses() {
+    let mut h = with_toolbar("a b", None, None);
+    select_bar(&mut h, 2, 3);
+    h.get_by_label("B").click();
+    h.run();
+    assert_eq!(h.state().text, "a **b**");
+    assert!(h.state().changed);
+    assert_eq!(bar_selection(&h), 4..5);
+    assert!(h.ctx.memory(|m| m.has_focus(Id::unique(ID))));
+}
+
+#[test]
+fn toolbar_labels_are_replaceable() {
+    let labels = ToolbarLabels {
+        strong: "太字".into(),
+        ..ToolbarLabels::default()
+    };
+    let mut h = with_toolbar("a b", Some(labels), None);
+    select_bar(&mut h, 2, 3);
+    h.get_by_label("太字").click();
+    h.run();
+    assert_eq!(h.state().text, "a **b**");
+}
+
+#[test]
+fn toolbar_icon_button_is_found_by_its_label() {
+    let icons = ToolbarIcons {
+        strong: Some(ImageSource::Bytes {
+            uri: "bytes://b.svg".into(),
+            bytes: SVG.as_bytes().into(),
+        }),
+        ..ToolbarIcons::default()
+    };
+    let mut h = with_toolbar("a b", None, Some(icons));
+    select_bar(&mut h, 2, 3);
+    h.get_by_label("B").click();
+    h.run();
+    assert_eq!(h.state().text, "a **b**");
+}
+
+#[test]
+fn toolbar_heading_cycles() {
+    let mut h = with_toolbar("a", None, None);
+    for want in ["# a", "## a", "### a", "a"] {
+        h.get_by_label("H").click();
+        h.run();
+        assert_eq!(h.state().text, want);
+    }
+}
+
+#[test]
+fn toolbar_acts_at_the_end_with_no_cursor() {
+    let mut h = with_toolbar("a", None, None);
+    h.ctx
+        .data_mut(|d| d.remove::<TextEditState>(Id::unique(ID)));
+    h.get_by_label("-").click();
+    h.run();
+    assert_eq!(h.state().text, "- a");
 }

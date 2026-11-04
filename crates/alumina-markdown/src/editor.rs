@@ -31,7 +31,6 @@ pub(crate) fn selection(ctx: &Context, id: Id, text: &str) -> Option<Range<usize
 }
 
 /// Select `bytes` of `text` in the editor `id`.
-#[allow(dead_code)] // For the toolbar (Task 11).
 pub(crate) fn set_selection(ctx: &Context, id: Id, text: &str, bytes: Range<usize>) {
     let mut state = TextEditState::load(ctx, id).unwrap_or_default();
     state.cursor.set_char_range(Some(char_range(text, bytes)));
@@ -46,7 +45,7 @@ fn char_range(text: &str, bytes: Range<usize>) -> CCursorRange {
 }
 
 /// Apply `edit` to the editor `id` holding `text`, as one step for its undo.
-fn apply(ctx: &Context, id: Id, text: &mut String, edit: &Edit) {
+pub(crate) fn apply(ctx: &Context, id: Id, text: &mut String, edit: &Edit) {
     let mut state = TextEditState::load(ctx, id).unwrap_or_default();
     let mut undoer = state.undoer();
     if let Some(before) = state.cursor.char_range() {
