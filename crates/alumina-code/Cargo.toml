@@ -1,0 +1,19 @@
+[package]
+name = "alumina-code"
+version = "0.1.0"
+description = "A code editor for egui that keeps the indentation"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords = ["egui", "code", "editor", "text-editor", "gui"]
+categories = ["gui", "text-editors"]
+
+[features]
+serde = ["dep:serde"]
+
+[dependencies]
+egui = { workspace = true }
+serde = { version = "1", default-features = false, features = ["derive"], optional = true }
+
+[dev-dependencies]
+serde_json = "1"
