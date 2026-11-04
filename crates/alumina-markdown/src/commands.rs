@@ -84,7 +84,7 @@ pub fn indent(source: &str, selection: Range<usize>, outdent: bool) -> Option<Ed
 }
 
 /// Sort, clamp to the text and move onto char boundaries (outwards).
-fn clamp(source: &str, sel: Range<usize>) -> Range<usize> {
+pub(crate) fn clamp(source: &str, sel: Range<usize>) -> Range<usize> {
     let (a, b) = if sel.start <= sel.end {
         (sel.start, sel.end)
     } else {

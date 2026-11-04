@@ -534,3 +534,103 @@ fn toolbar_acts_at_the_end_with_no_cursor() {
     h.run();
     assert_eq!(h.state().text, "- a");
 }
+
+/// A toolbar and editor in the given order; the selection is set in chars.
+fn ordered(below: bool, text: &str, sel: (usize, usize)) -> Harness<'static, BarState> {
+    let mut h = Harness::builder().with_size([600.0, 300.0]).build_ui_state(
+        |ui, s: &mut BarState| {
+            ui.ctx().set_missing_glyph_policy(MissingGlyphPolicy::Tofu);
+            let id = Id::unique(ID);
+            if !s.changed {
+                MarkdownToolbar::new(&mut s.text, id).show(ui);
+            }
+            MarkdownEditor::new(&mut s.text).id(id).show(ui);
+            if s.changed {
+                MarkdownToolbar::new(&mut s.text, id).show(ui);
+            }
+        },
+        BarState {
+            text: text.to_owned(),
+            changed: below,
+            ..BarState::default()
+        },
+    );
+    h.get_by_role(Role::MultilineTextInput).click();
+    h.run();
+    select_bar(&mut h, sel.0, sel.1);
+    h
+}
+
+/// Press, wait, release: as a mouse does.
+fn slow_click(h: &mut Harness<'_, BarState>, label: &str) {
+    let pos = h.get_by_label(label).rect().center();
+    h.hover_at(pos);
+    h.run();
+    let button = |pressed| Event::PointerButton {
+        pos,
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers: Modifiers::NONE,
+    };
+    h.event(button(true));
+    h.step();
+    h.step();
+    h.event(button(false));
+    h.step();
+    h.run();
+}
+
+#[test]
+fn toolbar_clicked_slowly_keeps_the_selection_above_or_below() {
+    for below in [false, true] {
+        let mut h = ordered(below, "a b", (2, 3));
+        slow_click(&mut h, "B");
+        assert_eq!(h.state().text, "a **b**", "below={below}");
+        assert_eq!(bar_selection(&h), 4..5, "below={below}");
+        assert!(h.ctx.memory(|m| m.has_focus(Id::unique(ID))));
+    }
+}
+
+#[test]
+fn toolbar_wraps_japanese_and_emoji() {
+    for below in [false, true] {
+        let mut h = ordered(below, "日本語🎌x", (1, 4));
+        slow_click(&mut h, "B");
+        assert_eq!(h.state().text, "日**本語🎌**x", "below={below}");
+        assert_eq!(bar_selection(&h), 3..6, "below={below}");
+    }
+}
+
+#[test]
+fn toolbar_survives_the_app_replacing_the_text() {
+    let mut h = Harness::builder().with_size([600.0, 300.0]).build_ui_state(
+        |ui, s: &mut BarState| {
+            let id = Id::unique(ID);
+            MarkdownToolbar::new(&mut s.text, id).show(ui);
+            MarkdownEditor::new(&mut s.text).id(id).show(ui);
+            if ui.button("Clear").clicked() {
+                s.text.clear();
+            }
+        },
+        BarState {
+            text: "hello world".into(),
+            ..BarState::default()
+        },
+    );
+    h.get_by_role(Role::MultilineTextInput).click();
+    h.run();
+    select_bar(&mut h, 11, 11);
+    h.get_by_label("Clear").click();
+    h.run();
+    assert_eq!(h.state().text, "");
+}
+
+#[test]
+fn toolbar_undo_restores_the_selection() {
+    let mut h = ordered(true, "a b", (2, 3));
+    slow_click(&mut h, "B");
+    h.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    h.run();
+    assert_eq!(h.state().text, "a b");
+    assert_eq!(bar_selection(&h), 2..3);
+}

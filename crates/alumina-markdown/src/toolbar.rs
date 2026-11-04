@@ -1,14 +1,11 @@
 //! [`MarkdownToolbar`]: buttons that run the [`commands`](crate::commands) on the editor.
 
-use egui::{
-    Button, Context, Id, Image, ImageSource, Key, KeyboardShortcut, Modifiers, Response, Role, Ui,
-    WidgetInfo,
-};
+use egui::{Button, Context, Id, Image, ImageSource, Response, Role, Ui, WidgetInfo};
 
-use crate::commands::{Command, command};
+use crate::commands::{Command, clamp, command};
 use std::ops::Range;
 
-use crate::editor::{apply, selection, set_selection};
+use crate::editor::{apply, selection, set_selection, shortcut};
 
 macro_rules! fields {
     ($($(#[$m:meta])* $name:ident),* $(,)?) => {
@@ -60,6 +57,9 @@ impl Default for ToolbarLabels {
 }
 
 /// A row of buttons for the [`MarkdownEditor`](crate::MarkdownEditor) with the same id.
+///
+/// It edits the text whatever the editor's state: an app hides it next to a read-only
+/// editor.
 pub struct MarkdownToolbar<'t> {
     text: &'t mut String,
     editor_id: Id,
@@ -98,9 +98,18 @@ impl<'t> MarkdownToolbar<'t> {
         let ctx = ui.ctx().clone();
         // An editor that lost the focus to a press on a button collapsed its selection
         // as it did: take the selection back, and the focus with it.
-        if let Some(sel) = ctx.data_mut(|d| d.remove_temp::<Range<usize>>(restore_id(editor_id))) {
-            set_selection(&ctx, editor_id, text, sel);
+        let now = ctx.cumulative_pass_nr();
+        let restore = ctx.data_mut(|d| d.remove_temp::<(u64, Range<usize>)>(restore_id(editor_id)));
+        if let Some((stamp, sel)) = restore
+            && now <= stamp + 2
+        {
+            set_selection(&ctx, editor_id, text, clamp(text, sel));
             ui.memory_mut(|m| m.request_focus(editor_id));
+        }
+        // A held selection is only good while a button is down.
+        let was_pressed = ctx.data(|d| d.get_temp::<bool>(pressed_id(editor_id)).unwrap_or(false));
+        if !was_pressed && !ui.memory(|m| m.has_focus(editor_id)) {
+            ctx.data_mut(|d| d.remove_temp::<Range<usize>>(held_id(editor_id)));
         }
         let editor_focused = ui.memory(|m| m.has_focus(editor_id));
         if editor_focused {
@@ -114,60 +123,34 @@ impl<'t> MarkdownToolbar<'t> {
                 }
             });
         }
-        let cmd_key = |key| Some(KeyboardShortcut::new(Modifiers::COMMAND, key));
         let heading = Command::Heading(next_heading(text, &ctx, editor_id));
         let buttons = [
-            (
-                Command::Strong,
-                &labels.strong,
-                &icons.strong,
-                cmd_key(Key::B),
-            ),
-            (
-                Command::Emphasis,
-                &labels.emphasis,
-                &icons.emphasis,
-                cmd_key(Key::I),
-            ),
+            (Command::Strong, &labels.strong, &icons.strong),
+            (Command::Emphasis, &labels.emphasis, &icons.emphasis),
             (
                 Command::Strikethrough,
                 &labels.strikethrough,
                 &icons.strikethrough,
-                Some(KeyboardShortcut::new(
-                    Modifiers::COMMAND.plus(Modifiers::SHIFT),
-                    Key::X,
-                )),
             ),
-            (Command::Code, &labels.code, &icons.code, cmd_key(Key::E)),
-            (Command::Link, &labels.link, &icons.link, cmd_key(Key::K)),
-            (heading, &labels.heading, &icons.heading, None),
-            (
-                Command::BulletList,
-                &labels.bullet_list,
-                &icons.bullet_list,
-                None,
-            ),
+            (Command::Code, &labels.code, &icons.code),
+            (Command::Link, &labels.link, &icons.link),
+            (heading, &labels.heading, &icons.heading),
+            (Command::BulletList, &labels.bullet_list, &icons.bullet_list),
             (
                 Command::NumberedList,
                 &labels.numbered_list,
                 &icons.numbered_list,
-                None,
             ),
-            (Command::TaskList, &labels.task_list, &icons.task_list, None),
-            (Command::Quote, &labels.quote, &icons.quote, None),
-            (
-                Command::CodeBlock,
-                &labels.code_block,
-                &icons.code_block,
-                None,
-            ),
+            (Command::TaskList, &labels.task_list, &icons.task_list),
+            (Command::Quote, &labels.quote, &icons.quote),
+            (Command::CodeBlock, &labels.code_block, &icons.code_block),
         ];
         let mut changed = false;
         let mut pressed = false;
         let mut response = ui
             .horizontal(|ui| {
-                for (cmd, label, icon, shortcut) in buttons {
-                    let hover = match shortcut {
+                for (cmd, label, icon) in buttons {
+                    let hover = match shortcut(cmd) {
                         Some(s) => format!("{label} ({})", ui.ctx().format_shortcut(&s)),
                         None => label.clone(),
                     };
@@ -180,6 +163,7 @@ impl<'t> MarkdownToolbar<'t> {
                 }
             })
             .response;
+        ctx.data_mut(|d| d.insert_temp(pressed_id(editor_id), pressed));
         if !editor_focused && !pressed {
             ctx.data_mut(|d| d.remove_temp::<Range<usize>>(held_id(editor_id)));
         }
@@ -204,6 +188,11 @@ fn button(ui: &mut Ui, label: &str, icon: &Option<ImageSource<'static>>) -> Resp
     response
 }
 
+/// Where the toolbar keeps whether a button was down last frame.
+fn pressed_id(editor: Id) -> Id {
+    editor.with("toolbar-pressed")
+}
+
 /// Where the toolbar keeps the editor's selection while a button is held.
 fn held_id(editor: Id) -> Id {
     editor.with("toolbar-held")
@@ -218,19 +207,27 @@ fn restore_id(editor: Id) -> Id {
 /// pressed; the end of the text if it never had one.
 fn target(ctx: &Context, id: Id, text: &str) -> Range<usize> {
     let held = ctx.data(|d| d.get_temp::<Range<usize>>(held_id(id)));
-    held.or_else(|| selection(ctx, id, text))
-        .unwrap_or(text.len()..text.len())
+    // The text may have changed since the selection was kept.
+    clamp(
+        text,
+        held.or_else(|| selection(ctx, id, text))
+            .unwrap_or(text.len()..text.len()),
+    )
 }
 
 /// Apply `cmd` to the editor's selection as one undo step, and give the editor the focus
 /// back. Whether the text changed.
 fn run(ui: &Ui, text: &mut String, id: Id, cmd: Command) -> bool {
     let ctx = ui.ctx();
-    let edit = command(text, target(ctx, id, text), cmd);
+    let sel = target(ctx, id, text);
+    let edit = command(text, sel.clone(), cmd);
     if let Some(edit) = &edit {
+        // So that undo comes back to this selection, not the collapsed one.
+        set_selection(ctx, id, text, sel);
         apply(ctx, id, text, edit);
         // The editor may drop its selection this frame (see `show`).
-        ctx.data_mut(|d| d.insert_temp(restore_id(id), edit.selection.clone()));
+        let now = ctx.cumulative_pass_nr();
+        ctx.data_mut(|d| d.insert_temp(restore_id(id), (now, edit.selection.clone())));
     }
     ctx.data_mut(|d| d.remove_temp::<Range<usize>>(held_id(id)));
     ui.memory_mut(|m| m.request_focus(id));

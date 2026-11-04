@@ -90,6 +90,14 @@ const KEYS: [(Modifiers, Key, Action); 8] = [
     (Modifiers::NONE, Key::Enter, Action::Newline),
 ];
 
+/// The shortcut of `cmd` in [`KEYS`], if it has one.
+pub(crate) fn shortcut(cmd: Command) -> Option<egui::KeyboardShortcut> {
+    KEYS.iter().find_map(|&(m, k, a)| match a {
+        Action::Command(c) if c == cmd => Some(egui::KeyboardShortcut::new(m, k)),
+        _ => None,
+    })
+}
+
 /// The action of `event`, if it is a press of one of [`KEYS`].
 fn action(event: &Event) -> Option<Action> {
     let Event::Key {
