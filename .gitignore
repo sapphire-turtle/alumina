@@ -40,3 +40,7 @@ target
 /demo/android/app/src/main/jniLibs
 /demo/android/logcat.txt
 /demo/android/screenshot.png
+
+# The demo's app icon for the phones, rendered from demo/assets by its build.rs.
+/demo/ios/Assets.xcassets/AppIcon.appiconset/*.png
+/demo/android/app/src/main/res/mipmap-*/*.png

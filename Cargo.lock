@@ -178,6 +178,7 @@ dependencies = [
  "corundum-framework-build",
  "corundum-framework-gui",
  "corundum-framework-platform",
+ "png 0.18.1",
  "tracing",
  "tracing-subscriber",
 ]

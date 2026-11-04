@@ -21,7 +21,7 @@ targets:
       Release: Config.xcconfig
     sources:
       - Sources
-      # The app icon, rendered from demo/assets by demo/assets/render-icons.sh.
+      # The app icon: build-rust.sh's cargo build renders AppIcon.png into it (build.rs).
       - Assets.xcassets
     settings:
       base:
