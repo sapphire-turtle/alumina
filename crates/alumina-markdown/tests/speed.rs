@@ -21,6 +21,15 @@ fn parse_ten_thousand_lines() {
         lines += SAMPLE.lines().count();
     }
 
+    let doc = alumina_markdown::parse(&source);
+    let style =
+        alumina_markdown::MarkdownStyle::from_visuals(&alumina_markdown::egui::Visuals::dark());
+    let start = Instant::now();
+    for _ in 0..RUNS {
+        black_box(alumina_markdown::layout(&source, &doc, &style, 600.0));
+    }
+    eprintln!("layout: mean {:?} per layout", start.elapsed() / RUNS);
+
     let start = Instant::now();
     for _ in 0..RUNS {
         black_box(alumina_markdown::parse(black_box(&source)));
