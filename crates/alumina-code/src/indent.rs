@@ -152,14 +152,17 @@ pub fn close(source: &str, selection: Range<usize>, closer: char, indent: Indent
     if before.is_empty() || !before.chars().all(is_blank) {
         return None;
     }
+    let column: usize = before
+        .chars()
+        .map(|c| if c == '\t' { TAB } else { 1 })
+        .sum();
+    if column < indent.width() {
+        return None;
+    }
     let removed = if before.ends_with('\t') {
         1
     } else {
         let spaces = before.len() - before.trim_end_matches(' ').len();
-        let column: usize = before
-            .chars()
-            .map(|c| if c == '\t' { TAB } else { 1 })
-            .sum();
         let previous = (column - 1) / indent.width() * indent.width();
         spaces.min(column - previous)
     };
@@ -274,6 +277,9 @@ mod tests {
         assert_eq!(close("", 0..0, '}', S4), None);
         assert_eq!(close("    ", 0..4, '}', S4), None);
         assert_eq!(close("    ", 4..4, 'x', S4), None);
+        // Less than a level of indentation.
+        assert_eq!(close(" ", 1..1, '}', S4), None);
+        assert_eq!(close("  ", 2..2, '}', S4), None);
     }
     #[test]
     fn spaces_zero_is_one() {
