@@ -22,12 +22,19 @@ path = "src/main.rs"
 
 [dependencies]
 alumina-datetime = { workspace = true }
+# `LauncherSpec`, which gives the window its icon (and the app its entry in the app menu);
+# the version corundum-framework-gui is built with.
+corundum-framework-platform = "0.7.0"
 tracing = { workspace = true }
 
 # The window is corundum's, as in the apps: on a phone it keeps the app clear of the
 # system's bars and the keyboard, feeds it the keyboard's text, and on iOS puts it in a
 # scene; everywhere it finds a CJK font for the Japanese labels. Everywhere but Android it is
 # eframe's (`window::run`); on Android GameActivity's (`window::run_android`).
+# Embeds assets/app-icon.svg as the icon of the Windows executable (build.rs).
+[build-dependencies]
+corundum-framework-build = "0.7.0"
+
 [target.'cfg(not(target_os = "android"))'.dependencies]
 corundum-framework-gui = { version = "0.7.0", default-features = false, features = ["eframe"] }
 tracing-subscriber = { workspace = true, features = ["fmt", "env-filter"] }

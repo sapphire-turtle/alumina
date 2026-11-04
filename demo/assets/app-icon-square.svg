@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <rect width="24" height="24" fill="#1d2433"/>
+  <mask id="glyph" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24">
+    <g transform="translate(3 3) scale(0.75)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 2 20.66 7v10L12 22l-8.66-5V7Z" fill="#fff" stroke="#fff"/>
+      <path d="M12 0.5Q12 10 12.8 10.61Q13.73 11 21.96 6.25Q13.73 11 13.6 12Q13.73 13 21.96 17.75Q13.73 13 12.8 13.39Q12 14 12 23.5Q12 14 11.2 13.39Q10.27 13 2.04 17.75Q10.27 13 10.4 12Q10.27 11 2.04 6.25Q10.27 11 11.2 10.61Q12 10 12 0.5Z" fill="#000" stroke="#000" stroke-width="1"/>
+    </g>
+  </mask>
+  <rect width="24" height="24" fill="#ffffff" mask="url(#glyph)"/>
+</svg>

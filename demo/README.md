@@ -142,6 +142,19 @@ What a simulator's mouse cannot tell; on a device, with a finger:
 - **Dark and light**: the switch at the top right, and the system's setting with the third
   button.
 
+## The icon
+
+alumina's mark in white on a dark tile, drawn in [`assets/`](assets):
+
+- `app-icon.svg`: the desktops' (the window's, and the Windows executable's through
+  `build.rs`) and Android 7's;
+- `app-icon-square.svg`: iOS's, full-bleed, as iOS rounds the corners itself;
+- `app-icon-foreground.svg`: the foreground of Android's adaptive icon, from Android 8 on.
+
+The phones take PNGs: after changing an SVG, run `assets/render-icons.sh` (needs
+`rsvg-convert` and ImageMagick) and commit what it renders into `ios/Assets.xcassets` and
+`android/app/src/main/res`.
+
 ## CI
 
 CI builds and tests the demo on the desktops. Mobile CI runs clippy on it for iOS and
