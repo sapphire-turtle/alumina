@@ -6,7 +6,7 @@ workspace member, built and tested with the rest, and never published.
 | Page | What it shows |
 |---|---|
 | Date & time | The picker buttons (date, period, time, timestamp), a calendar on its own with what it picked, a drum and the time drums, and the calendar beside the drums. Settings: Japanese words, the first day of the week, week numbers, the dots, the cell size, the time's format, and which kinds the calendar picks |
-| Markdown | Not yet (#1) |
+| Markdown | The editor (`MarkdownEditor`) on a sample, laid out as Markdown as you type, with a Read-only checkbox and the last link clicked |
 
 Below 600 points wide (a phone) the settings fold away above the widgets and the parts
 stack.

@@ -4,6 +4,7 @@
 //! `alumina_demo_main` calls it), and `android_main` on an Android phone.
 
 mod datetime;
+mod markdown;
 
 use corundum_framework_gui::egui;
 
@@ -20,6 +21,7 @@ enum Page {
 pub struct Demo {
     page: Page,
     datetime: datetime::DateTimeDemo,
+    markdown: markdown::MarkdownDemo,
 }
 
 impl Default for Demo {
@@ -27,6 +29,7 @@ impl Default for Demo {
         Self {
             page: Page::DateTime,
             datetime: datetime::DateTimeDemo::default(),
+            markdown: markdown::MarkdownDemo::default(),
         }
     }
 }
@@ -56,9 +59,7 @@ impl Demo {
         });
         egui::CentralPanel::default().show(ui, |ui| match self.page {
             Page::DateTime => self.datetime.ui(ui),
-            Page::Markdown => {
-                ui.label("Not yet: see sapphire-turtle/alumina#1.");
-            }
+            Page::Markdown => self.markdown.ui(ui),
         });
     }
 }
