@@ -428,7 +428,9 @@ the editor's keys and the toolbar call them.
 
 **Files:**
 - Create: `crates/alumina-markdown/src/toolbar.rs`
-- Modify: `crates/alumina-markdown/tests/editor.rs`, `demo/src/markdown.rs`
+- Modify: `crates/alumina-markdown/tests/editor.rs`, `demo/src/markdown.rs`,
+  `crates/alumina-markdown/Cargo.toml` (dev-dependency `egui_extras = { version = "0.37",
+  features = ["svg"] }`, for the test's loader only)
 
 **Interfaces:**
 - Produces:
@@ -437,19 +439,30 @@ the editor's keys and the toolbar call them.
   impl<'t> MarkdownToolbar<'t> {
       pub fn new(text: &'t mut String, editor_id: egui::Id) -> Self;
       pub fn labels(self, labels: ToolbarLabels) -> Self;
+      pub fn icons(self, icons: ToolbarIcons) -> Self;
       pub fn show(self, ui: &mut egui::Ui) -> egui::Response; // changed() when it edited
   }
   #[derive(Clone, Debug)]
   pub struct ToolbarLabels { pub strong: String, pub emphasis: String, pub strikethrough: String,
       pub code: String, pub link: String, pub heading: String, pub bullet_list: String,
       pub numbered_list: String, pub task_list: String, pub quote: String, pub code_block: String }
+  #[derive(Clone, Debug, Default)]
+  pub struct ToolbarIcons { /* the same eleven fields */ pub strong: Option<egui::ImageSource<'static>>, .. }
   ```
-  Defaults: `"B"`, `"I"`, `"S"`, `"</>"`, `"Link"`, `"H"` (cycles 1→2→3→none), `"•"`,
-  `"1."`, `"☐"`, `"❝"`, `"{ }"`. Each button's hover text names the command and its
-  shortcut (`"Bold (Ctrl+B)"`, `⌘` on macOS via `ctx.format_shortcut`).
+  Label defaults, ASCII only (egui's default fonts may lack `☐`, `❝`): `"B"`, `"I"`, `"S"`,
+  `"</>"`, `"Link"`, `"H"` (cycles 1→2→3→none), `"-"`, `"1."`, `"[ ]"`, `">"`, `"{ }"`.
+  A button with an icon shows the icon alone, sized to `ui.spacing().interact_size.y`
+  less the button padding, tinted `visuals.text_color()`; its label then becomes its
+  accessible name. A button without one shows the label. Either way the hover text is the
+  label and, for the commands with one, the shortcut (`"B (Ctrl+B)"`, `⌘` on macOS via
+  `ctx.format_shortcut`); an app that wants words there passes words as labels. alumina ships no icons and no image loader: the app passes
+  `ImageSource`s and installs the loader they need (an SVG one for Lucide).
 - [ ] **Step 1: Write the failing tests**: a harness with the toolbar above the editor:
   select `2..3` in `"a b"`, click the `"B"` button → `"a **b**"`, the editor's selection is
-  `4..5` and it has focus again; a custom label `"太字"` is the button found by label.
+  `4..5` and it has focus again; a custom label `"太字"` is the button found by label; with
+  `ToolbarIcons { strong: Some(ImageSource::Bytes { uri: "bytes://b.svg".into(), bytes:
+  SVG.into() }), .. }` (a tiny SVG in the test, `egui_extras` loaders installed in the
+  harness) the strong button is still found by the label `"B"` and still toggles.
 - [ ] **Step 2: Run** — FAIL.
 - [ ] **Step 3: Implement** with `command`, the same selection loading and storing as
   Task 10 (factor them into `editor.rs` `pub(crate) fn selection(ctx, id, text) ->

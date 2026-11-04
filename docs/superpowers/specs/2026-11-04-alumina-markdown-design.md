@@ -143,7 +143,11 @@ where the cursor is in a list item.
 
 `MarkdownToolbar::new(&mut text, editor_id).labels(ToolbarLabels { .. }).show(ui)` is a
 row of buttons for the same commands. It is a widget of its own, so the app places it; the
-labels are strings the app may replace. It reads the editor's selection from its
+labels are strings the app may replace. `.icons(ToolbarIcons { .. })` gives a button an
+`egui::ImageSource` in place of its label, which then names it for screen readers; alumina
+ships no icon set, so an app uses its own (corundum-framework-gui would fill them with
+Lucide). Without icons the labels are ASCII, as egui's default fonts may lack symbols. It
+reads the editor's selection from its
 `TextEditState` by id, applies the command, and writes the new selection back, so the
 editor shows it on the next frame.
 
