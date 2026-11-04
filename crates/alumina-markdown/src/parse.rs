@@ -129,13 +129,18 @@ pub fn parse(source: &str) -> Doc {
                     );
                 }
                 Tag::CodeBlock(kind) => {
+                    let fenced = matches!(kind, CodeBlockKind::Fenced(_));
                     let info = match kind {
                         CodeBlockKind::Fenced(info) if !info.trim().is_empty() => {
                             Some(info.trim().to_string())
                         }
                         _ => None,
                     };
-                    let marks = fence_marks(source, &range);
+                    let marks = if fenced {
+                        fence_marks(source, &range)
+                    } else {
+                        Vec::new()
+                    };
                     push(&mut doc, BlockKind::CodeBlock { info }, range, marks);
                 }
                 _ => {}
@@ -175,12 +180,12 @@ fn push(doc: &mut Doc, kind: BlockKind, range: Range<usize>, marks: Vec<Range<us
     doc.blocks.push(Block { kind, range, marks });
 }
 
-/// `source[start..end]` without its leading spaces and tabs and trailing whitespace, or
+/// `source[start..end]` without its container prefix (spaces, tabs, `>`) and trailing whitespace, or
 /// `None` if nothing is left.
 fn trimmed_line(source: &str, start: usize, end: usize) -> Option<Range<usize>> {
     let line = &source[start..end];
     let text = line.trim_end();
-    let skipped = text.len() - text.trim_start_matches([' ', '\t']).len();
+    let skipped = text.len() - text.trim_start_matches([' ', '\t', '>']).len();
     let (from, to) = (start + skipped, start + text.len());
     (from < to).then_some(from..to)
 }
@@ -213,7 +218,15 @@ fn heading_marks(source: &str, range: &Range<usize>) -> Vec<Range<usize>> {
     if text[indent..].starts_with('#') {
         let hashes = text[indent..].len() - text[indent..].trim_start_matches('#').len();
         let from = first.start + indent;
-        return std::iter::once(from..from + hashes).collect();
+        let mut marks = Vec::new();
+        marks.push(from..from + hashes);
+        // A closing run of `#`s, set off from the text by a space.
+        let line = text.trim_end();
+        let rest = line.trim_end_matches('#');
+        if rest.len() < line.len() && rest.len() > indent + hashes && rest.ends_with([' ', '\t']) {
+            marks.push(first.start + rest.len()..first.start + line.len());
+        }
+        return marks;
     }
     // Setext: the underline is the last line.
     lines
@@ -265,21 +278,25 @@ fn quote_marks(source: &str, range: &Range<usize>, depth: usize) -> Vec<Range<us
 
 fn fence_marks(source: &str, range: &Range<usize>) -> Vec<Range<usize>> {
     let lines = lines(source, range);
-    let is_fence = |l: &Range<usize>| {
-        let t = source[l.clone()].trim_start_matches(' ');
-        t.starts_with("```") || t.starts_with("~~~")
-    };
-    let Some(first) = lines.first().filter(|l| is_fence(l)) else {
+    let Some(first) = lines.first() else {
         return Vec::new();
     };
-    let mut marks = Vec::new();
-    marks.extend(trimmed_line(source, first.start, first.end));
-    if let Some(last) = lines.last().filter(|l| lines.len() > 1 && is_fence(l)) {
-        let opening = source[first.clone()].trim_start();
-        let closing = source[last.clone()].trim();
-        let fence_char = opening.chars().next();
-        if closing.chars().all(|c| Some(c) == fence_char) {
-            marks.extend(trimmed_line(source, last.start, last.end));
+    let opening = source[first.clone()].trim_start_matches(' ');
+    let Some(fence_char) = opening.chars().next().filter(|c| matches!(c, '`' | '~')) else {
+        return Vec::new();
+    };
+    let run = opening.len() - opening.trim_start_matches(fence_char).len();
+    let mut marks: Vec<Range<usize>> = trimmed_line(source, first.start, first.end)
+        .into_iter()
+        .collect();
+    if let Some(last) = lines.last().filter(|_| lines.len() > 1) {
+        // The line starts with its container's prefix: `>`s and indentation.
+        let closing = trimmed_line(source, last.start, last.end);
+        if let Some(closing) = closing {
+            let text = &source[closing.clone()];
+            if text.len() >= run && text.chars().all(|c| c == fence_char) {
+                marks.push(closing);
+            }
         }
     }
     marks
@@ -418,5 +435,68 @@ mod tests {
         for (x, y) in a.blocks.iter().zip(&b.blocks) {
             assert_eq!(marks(lf, x), marks(&crlf, y));
         }
+    }
+
+    fn only_code(doc: &Doc) -> &Block {
+        doc.blocks
+            .iter()
+            .find(|b| matches!(b.kind, BlockKind::CodeBlock { .. }))
+            .unwrap()
+    }
+
+    #[test]
+    fn fence_in_quote() {
+        let src = "> ```\n> x\n> ```\n";
+        let doc = parse(src);
+        assert_eq!(marks(src, only_code(&doc)), ["```", "```"]);
+    }
+
+    #[test]
+    fn fence_in_list() {
+        let src = "- ```\n  x\n  ```\n";
+        let doc = parse(src);
+        assert_eq!(marks(src, only_code(&doc)), ["```", "```"]);
+        let src = "> - ```\n>   x\n>   ```\n";
+        let doc = parse(src);
+        assert_eq!(marks(src, only_code(&doc)), ["```", "```"]);
+    }
+
+    #[test]
+    fn indented_code_has_no_marks() {
+        let src = "    ```\n    x\n";
+        let doc = parse(src);
+        assert_eq!(doc.blocks[0].kind, BlockKind::CodeBlock { info: None });
+        assert!(doc.blocks[0].marks.is_empty());
+    }
+
+    #[test]
+    fn short_closing_fence_is_content() {
+        let src = "````\nx\n```";
+        let doc = parse(src);
+        assert_eq!(marks(src, only_code(&doc)), ["````"]);
+    }
+
+    #[test]
+    fn marks_in_quote_exclude_the_prefix() {
+        let src = "> T\n> ===\n";
+        assert_eq!(marks(src, &parse(src).blocks[1]), ["==="]);
+        let src = "> a\n> ---\n";
+        assert_eq!(marks(src, &parse(src).blocks[1]), ["---"]);
+    }
+
+    #[test]
+    fn atx_closing_run() {
+        let src = "## T ##\n";
+        assert_eq!(marks(src, &parse(src).blocks[0]), ["##", "##"]);
+        let src = "## T#\n";
+        assert_eq!(marks(src, &parse(src).blocks[0]), ["##"]);
+    }
+
+    #[test]
+    fn crlf_fence_and_setext() {
+        let src = "```rust\r\nx\r\n```\r\n";
+        assert_eq!(marks(src, &parse(src).blocks[0]), ["```rust", "```"]);
+        let src = "Title\r\n===\r\n";
+        assert_eq!(marks(src, &parse(src).blocks[0]), ["==="]);
     }
 }
