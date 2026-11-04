@@ -60,13 +60,12 @@ pub fn command(source: &str, selection: Range<usize>, command: Command) -> Optio
         Command::Strikethrough => Some(toggle(source, sel, "~~")),
         Command::Code => Some(toggle(source, sel, "`")),
         Command::Link => Some(unlink(source, &sel).unwrap_or_else(|| link(source, sel))),
-        // Task 8
-        Command::Heading(_)
+        line_command @ (Command::Heading(_)
         | Command::BulletList
         | Command::NumberedList
         | Command::TaskList
         | Command::Quote
-        | Command::CodeBlock => None,
+        | Command::CodeBlock) => Some(lines::edit(source, sel, line_command)),
     }
 }
 
@@ -263,6 +262,8 @@ fn link(source: &str, sel: Range<usize>) -> Edit {
     }
 }
 
+mod lines;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -402,5 +403,109 @@ mod tests {
             }
         }
         assert_eq!(run("", 0..0, Command::Strong), ("****".into(), 2..2));
+    }
+
+    #[test]
+    fn heading_levels() {
+        let h = Command::Heading;
+        assert_eq!(run("a", 0..0, h(2)).0, "## a");
+        assert_eq!(run("# a", 0..0, h(2)).0, "## a");
+        assert_eq!(run("## a", 0..0, h(2)).0, "a");
+        assert_eq!(run("## a", 0..0, h(0)).0, "a");
+        assert_eq!(run("  # a\nb", 0..7, h(3)).0, "  ### a\n### b");
+        assert_eq!(run("## a", 0..4, h(2)), ("a".into(), 0..1));
+    }
+
+    #[test]
+    fn lists_over_lines() {
+        let (t, sel) = run("a\nb", 0..3, Command::BulletList);
+        assert_eq!((t.as_str(), sel.clone()), ("- a\n- b", 2..7));
+        assert_eq!(run(&t, sel, Command::BulletList), ("a\nb".into(), 0..3));
+        assert_eq!(run("a\nb", 0..3, Command::NumberedList).0, "1. a\n2. b");
+        assert_eq!(run("a\nb", 0..3, Command::TaskList).0, "- [ ] a\n- [ ] b");
+        assert_eq!(run("1. a", 0..0, Command::BulletList).0, "- a");
+        assert_eq!(run("- a", 0..0, Command::NumberedList).0, "1. a");
+        assert_eq!(run("- [ ] a", 0..0, Command::BulletList).0, "- a");
+        assert_eq!(run("- a", 0..0, Command::TaskList).0, "- [ ] a");
+        assert_eq!(run("- [x] a", 0..0, Command::TaskList).0, "a");
+        // Mixed: add to the lacking line; nesting and blank lines are kept.
+        assert_eq!(
+            run("- a\n  b\n\nc", 0..12, Command::BulletList).0,
+            "- a\n  - b\n\n- c"
+        );
+        assert_eq!(run("a\n\nb", 0..5, Command::NumberedList).0, "1. a\n\n2. b");
+    }
+
+    #[test]
+    fn selection_ending_at_a_line_start_skips_that_line() {
+        assert_eq!(
+            run("a\nb", 0..2, Command::BulletList),
+            ("- a\nb".into(), 2..4)
+        );
+        assert_eq!(
+            run("a\nb", 2..2, Command::BulletList),
+            ("a\n- b".into(), 4..4)
+        );
+    }
+
+    #[test]
+    fn quote() {
+        let (t, sel) = run("a\nb", 0..3, Command::Quote);
+        assert_eq!((t.as_str(), sel.clone()), ("> a\n> b", 2..7));
+        assert_eq!(run(&t, sel, Command::Quote), ("a\nb".into(), 0..3));
+        assert_eq!(run("a\n\nb", 0..5, Command::Quote).0, "> a\n>\n> b");
+        assert_eq!(run("> a\n>\n> b", 0..9, Command::Quote).0, "a\n\nb");
+    }
+
+    #[test]
+    fn code_block() {
+        let (t, sel) = run("a\nb", 0..3, Command::CodeBlock);
+        assert_eq!((t.as_str(), sel.clone()), ("```\na\nb\n```", 4..7));
+        assert_eq!(run(&t, sel, Command::CodeBlock), ("a\nb".into(), 0..3));
+        assert_eq!(run(&t, 0..t.len(), Command::CodeBlock).0, "a\nb");
+        assert_eq!(
+            run("x\n```\na\n```\ny", 6..7, Command::CodeBlock).0,
+            "x\na\ny"
+        );
+        assert_eq!(run("a\n", 0..0, Command::CodeBlock).0, "```\na\n```\n");
+    }
+
+    #[test]
+    fn ends() {
+        let all = [
+            Command::Heading(1),
+            Command::Heading(0),
+            Command::BulletList,
+            Command::NumberedList,
+            Command::TaskList,
+            Command::Quote,
+            Command::CodeBlock,
+        ];
+        for cmd in all {
+            for (src, sel) in [("", 0..0), ("a\nb", 3..3), ("a\nb", 0..0), ("a\n", 2..2)] {
+                let (text, selection) = run(src, sel, cmd);
+                assert!(selection.start <= selection.end && selection.end <= text.len());
+                assert!(text.is_char_boundary(selection.start));
+                assert!(text.is_char_boundary(selection.end));
+            }
+        }
+        assert_eq!(run("", 0..0, Command::BulletList), ("- ".into(), 2..2));
+        assert_eq!(
+            run("", 0..0, Command::CodeBlock),
+            ("```\n\n```".into(), 4..4)
+        );
+        assert_eq!(run("a\nb", 3..3, Command::Quote), ("a\n> b".into(), 5..5));
+    }
+
+    #[test]
+    fn crlf_is_kept() {
+        assert_eq!(run("a\r\nb", 0..4, Command::BulletList).0, "- a\r\n- b");
+        assert_eq!(run("- a\r\n- b", 0..8, Command::BulletList).0, "a\r\nb");
+        assert_eq!(
+            run("a\r\nb", 0..4, Command::CodeBlock).0,
+            "```\r\na\r\nb\r\n```"
+        );
+        assert_eq!(run("```\r\na\r\n```", 5..5, Command::CodeBlock).0, "a");
+        assert_eq!(run("a\r\n\r\nb", 0..6, Command::Quote).0, "> a\r\n>\r\n> b");
     }
 }
