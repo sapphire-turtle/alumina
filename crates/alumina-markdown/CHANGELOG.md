@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- *(alumina-markdown)* several keys in one frame (typed text and Enter, Tab or a shortcut) are applied in the order typed (#30)
+
 ### Changed
 
 - *(alumina-markdown)* a document starting with `---` ... `---` is now read as front matter, where it was a thematic break and a setext heading

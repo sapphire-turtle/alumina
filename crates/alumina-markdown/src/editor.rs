@@ -141,31 +141,81 @@ fn forget_composing(ctx: &Context, id: Id) {
     ctx.data_mut(|d| d.remove::<bool>(composing_id(id)));
 }
 
+/// Whether `event`, left for egui, edits the text or moves the cursor. A pressed key counts
+/// only if the `TextEdit` acts on it: the arrows, Home, End, paging, deleting, Enter, Tab,
+/// and the shortcuts. A char key is not an edit: its `Text` event is (egui-winit sends the
+/// key before the text, the web the text before the key).
+///
+/// Copied from alumina-code's editor, to avoid new public API there.
+fn egui_edits(event: &Event) -> bool {
+    match event {
+        Event::Text(_) | Event::Paste(_) | Event::Cut | Event::Ime(_) => true,
+        Event::Key {
+            key,
+            pressed: true,
+            modifiers,
+            ..
+        } => {
+            modifiers.ctrl
+                || modifiers.command
+                || modifiers.mac_cmd
+                || matches!(
+                    key,
+                    Key::ArrowUp
+                        | Key::ArrowDown
+                        | Key::ArrowLeft
+                        | Key::ArrowRight
+                        | Key::Home
+                        | Key::End
+                        | Key::PageUp
+                        | Key::PageDown
+                        | Key::Backspace
+                        | Key::Delete
+                        | Key::Enter
+                        | Key::Tab
+                )
+        }
+        _ => false,
+    }
+}
+
 /// Take the keys the focused, editable editor `id` handles out of this frame's input, and
 /// apply their edits to `text` before the `TextEdit` sees the rest. Whether `text` changed.
+///
+/// The edits come before egui's, so the editor takes presses only up to the first event of
+/// the frame that it leaves for egui and that edits the text or moves the cursor (a `Text`,
+/// `Paste`, `Cut`, `Ime` event, or a pressed key it does not take that egui acts on,
+/// including a taken key whose command is `None`, such as Enter outside a list). From that
+/// event on it takes nothing more this frame: the later presses reach egui as they are, so
+/// that the text comes out in the order typed. (This is the rule of alumina-code's editor.)
 fn take_keys(ui: &Ui, id: Id, text: &mut String) -> bool {
     let ctx = ui.ctx();
     let was_composing = ctx.data(|d| d.get_temp::<bool>(composing_id(id)).unwrap_or(false));
     let (composing, ime) = ui.input_mut(|i| take_ime_enters(&mut i.events, was_composing));
     ctx.data_mut(|d| d.insert_temp(composing_id(id), composing));
 
-    // The presses to act on, in order; most frames have none.
+    // The presses to act on, in order, up to the first event egui will handle that edits the
+    // text or moves the cursor; most frames have none.
     let presses: Vec<(usize, Action)> = ui.input(|i| {
-        i.events
-            .iter()
-            .enumerate()
-            .filter_map(|(at, e)| action(e).map(|a| (at, a)))
-            .collect()
+        let mut presses = Vec::new();
+        for (at, e) in i.events.iter().enumerate() {
+            match action(e) {
+                Some(a) => presses.push((at, a)),
+                None if egui_edits(e) => break,
+                None => {}
+            }
+        }
+        presses
     });
     if presses.is_empty() {
         return false;
     }
     // With no cursor yet (focus just gained), act at the end of the text.
     let mut sel = selection(ctx, id, text).unwrap_or(text.len()..text.len());
-    let mut taken = 0;
     let mut indented = false;
     let mut changed = false;
-    for (at, action) in presses {
+    // Each press that does not end the loop is taken, so `taken` is its index.
+    for (taken, (at, action)) in presses.into_iter().enumerate() {
         let edit = match action {
             Action::Command(cmd) => command(text, sel.clone(), cmd),
             Action::Indent(outdent) => indent(text, sel.clone(), outdent),
@@ -173,10 +223,10 @@ fn take_keys(ui: &Ui, id: Id, text: &mut String) -> bool {
             Action::Newline if ime || composing || !sel.is_empty() => None,
             Action::Newline => newline(text, sel.start),
         };
-        // Nothing to do: the key is egui's.
-        let Some(edit) = edit else { continue };
+        // Nothing to do: the key is egui's, which edits at the cursor: what follows must
+        // come after it.
+        let Some(edit) = edit else { break };
         ui.input_mut(|i| i.events.remove(at - taken));
-        taken += 1;
         indented |= matches!(action, Action::Indent(_));
         apply(ctx, id, text, &edit);
         sel = edit.selection;
