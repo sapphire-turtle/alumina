@@ -1,0 +1,214 @@
+//! The editor driven as a user would: focus, typing, IME, keys.
+
+use alumina_code::egui::accesskit::Role;
+use alumina_code::egui::text::{CCursor, CCursorRange};
+use alumina_code::egui::text_edit::TextEditState;
+use alumina_code::egui::{Event, Id, ImeEvent, Key, MissingGlyphPolicy, Modifiers};
+use alumina_code::{CodeEditor, Indent};
+use egui_kittest::Harness;
+use egui_kittest::kittest::Queryable as _;
+
+#[derive(Default)]
+struct State {
+    text: String,
+    changed: bool,
+    read_only: bool,
+    indent: Indent,
+}
+
+/// The editor's id in these tests, to set its selection.
+const ID: &str = "code";
+
+fn editor(text: &str, read_only: bool, indent: Indent) -> Harness<'static, State> {
+    let mut h = Harness::builder().with_size([400.0, 200.0]).build_ui_state(
+        |ui, s: &mut State| {
+            // egui's fonts have no Japanese: draw tofu instead of panicking.
+            ui.ctx().set_missing_glyph_policy(MissingGlyphPolicy::Tofu);
+            let out = CodeEditor::new(&mut s.text)
+                .id(Id::unique(ID))
+                .read_only(s.read_only)
+                .indent(s.indent)
+                .show(ui);
+            s.changed |= out.changed;
+        },
+        State {
+            text: text.into(),
+            read_only,
+            indent,
+            ..State::default()
+        },
+    );
+    h.run();
+    h.get_by_role(Role::MultilineTextInput).click();
+    h.run();
+    h
+}
+
+fn with(text: &str) -> Harness<'static, State> {
+    editor(text, false, Indent::Spaces(4))
+}
+
+/// Select chars `start..end` of the editor, as egui stores it.
+fn select(h: &mut Harness<'_, State>, start: usize, end: usize) {
+    let ctx = h.ctx.clone();
+    let id = Id::unique(ID);
+    let mut state = TextEditState::load(&ctx, id).unwrap_or_default();
+    state.cursor.set_char_range(Some(CCursorRange::two(
+        CCursor::new(start),
+        CCursor::new(end),
+    )));
+    state.store(&ctx, id);
+}
+
+fn set_cursor(h: &mut Harness<'_, State>, at: usize) {
+    select(h, at, at);
+}
+
+fn key(h: &mut Harness<'_, State>, key: Key, modifiers: Modifiers) {
+    h.input_mut().events.push(Event::Key {
+        key,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers,
+    });
+    h.run();
+}
+
+fn text(h: &mut Harness<'_, State>, t: &str) {
+    h.input_mut().events.push(Event::Text(t.into()));
+    h.run();
+}
+
+fn enter_key() -> Event {
+    Event::Key {
+        key: Key::Enter,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: Modifiers::NONE,
+    }
+}
+
+fn preedit(t: &str) -> Event {
+    Event::Ime(ImeEvent::Preedit {
+        text: t.into(),
+        active_range_chars: None,
+    })
+}
+
+#[test]
+fn enter_after_a_brace_goes_in() {
+    let mut h = with("fn a() {}");
+    set_cursor(&mut h, 8);
+    key(&mut h, Key::Enter, Modifiers::NONE);
+    assert_eq!(h.state().text, "fn a() {\n    \n}");
+    assert!(h.state().changed);
+    text(&mut h, "x");
+    assert_eq!(h.state().text, "fn a() {\n    x\n}");
+}
+
+#[test]
+fn a_closer_comes_out() {
+    let mut h = with("{\n        ");
+    set_cursor(&mut h, 10);
+    text(&mut h, "}");
+    assert_eq!(h.state().text, "{\n    }");
+}
+
+#[test]
+fn tab_and_shift_tab_over_lines() {
+    let mut h = with("a\nb");
+    select(&mut h, 0, 3);
+    key(&mut h, Key::Tab, Modifiers::NONE);
+    assert_eq!(h.state().text, "    a\n    b");
+    key(&mut h, Key::Tab, Modifiers::SHIFT);
+    assert_eq!(h.state().text, "a\nb");
+}
+
+#[test]
+fn tab_on_blank_lines_is_taken() {
+    let mut h = with("\n\n");
+    select(&mut h, 0, 2);
+    key(&mut h, Key::Tab, Modifiers::NONE);
+    assert_eq!(h.state().text, "\n\n");
+    assert_eq!(h.ctx.memory(|m| m.focused()), Some(Id::unique(ID)));
+}
+
+#[test]
+fn shift_tab_on_an_unindented_selection_keeps_it() {
+    let mut h = with("ab");
+    select(&mut h, 0, 2);
+    key(&mut h, Key::Tab, Modifiers::SHIFT);
+    assert_eq!(h.state().text, "ab");
+}
+
+#[test]
+fn tab_keeps_the_focus() {
+    let mut h = with("x");
+    set_cursor(&mut h, 1);
+    key(&mut h, Key::Tab, Modifiers::NONE);
+    assert_eq!(h.state().text, "x   ");
+    assert_eq!(h.ctx.memory(|m| m.focused()), Some(Id::unique(ID)));
+}
+
+#[test]
+fn backspace_takes_a_level() {
+    let mut h = with("        ");
+    set_cursor(&mut h, 8);
+    key(&mut h, Key::Backspace, Modifiers::NONE);
+    assert_eq!(h.state().text, "    ");
+}
+
+#[test]
+fn undo_reverts_one_edit() {
+    let mut h = with("{}");
+    set_cursor(&mut h, 1);
+    key(&mut h, Key::Enter, Modifiers::NONE);
+    assert_eq!(h.state().text, "{\n    \n}");
+    key(&mut h, Key::Z, Modifiers::COMMAND);
+    assert_eq!(h.state().text, "{}");
+}
+
+#[test]
+fn ime_keeps_enter_and_closers() {
+    let mut h = with("{}");
+    set_cursor(&mut h, 1);
+    // One frame, as macOS and Windows may deliver them.
+    h.input_mut().events.extend([
+        preedit("か"),
+        enter_key(),
+        Event::Ime(ImeEvent::Commit("か".into())),
+    ]);
+    h.run();
+    assert_eq!(h.state().text, "{か}");
+
+    let mut h = with("    ");
+    set_cursor(&mut h, 4);
+    h.input_mut().events.extend([
+        preedit("x"),
+        Event::Ime(ImeEvent::Commit("x".into())),
+        Event::Text(")".into()),
+    ]);
+    h.run();
+    assert_eq!(h.state().text, "    x)");
+}
+
+#[test]
+fn read_only_takes_nothing() {
+    let mut h = editor("{}", true, Indent::default());
+    set_cursor(&mut h, 1);
+    key(&mut h, Key::Enter, Modifiers::NONE);
+    key(&mut h, Key::Tab, Modifiers::NONE);
+    text(&mut h, "}");
+    assert_eq!(h.state().text, "{}");
+    assert!(!h.state().changed);
+}
+
+#[test]
+fn the_indent_unit_is_the_app_s() {
+    let mut h = editor("{}", false, Indent::Tab);
+    set_cursor(&mut h, 1);
+    key(&mut h, Key::Enter, Modifiers::NONE);
+    assert_eq!(h.state().text, "{\n\t\n}");
+}
