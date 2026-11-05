@@ -1103,10 +1103,100 @@ mod highlighting {
         assert!(t.asked.lock().unwrap().is_empty());
     }
 
+    /// Asserts which of the bytes of `source` are `Keyword`-coloured: exactly `expected`.
+    fn assert_keywords(source: &str, expected: Range<usize>) {
+        let kw = style().code_theme.color(TokenKind::Keyword);
+        let s = sections(source, Some(&Test::default()), 2);
+        for b in 0..source.len() {
+            assert_eq!(
+                color_at(&s, b) == kw,
+                expected.contains(&b),
+                "byte {b} of {source:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_token_on_a_later_line_of_a_quote_lands_on_its_code() {
+        let src = "> ```rust\n> x\n> fn a\n> ```\n";
+        let at = src.find("fn").unwrap();
+        assert_keywords(src, at..at + 2);
+    }
+
+    #[test]
+    fn a_token_on_a_later_line_of_a_list_item_lands_on_its_code() {
+        let src = "- a\n\n  ```rust\n  x\n  fn a\n  ```\n";
+        let at = src.find("fn").unwrap();
+        assert_keywords(src, at..at + 2);
+    }
+
+    #[test]
+    fn a_token_in_a_crlf_block_leaves_the_returns() {
+        let src = "```rust\r\nx\r\nfn a\r\n```\r\n";
+        let at = src.find("fn").unwrap();
+        assert_keywords(src, at..at + 2);
+    }
+
+    /// One token over all of the code.
+    struct Whole;
+    impl Highlighter for Whole {
+        fn highlight(&self, _: &str, code: &str) -> Option<Vec<(Range<usize>, TokenKind)>> {
+            Some(vec![(0..code.len(), TokenKind::Keyword)])
+        }
+    }
+
+    #[test]
+    fn a_token_across_pieces_is_split_around_the_prefixes() {
+        let src = "> ```rust\n> ab\n> cd\n> ```\n";
+        let kw = style().code_theme.color(TokenKind::Keyword);
+        let s = sections(src, Some(&Whole), 2);
+        let ab = src.find("ab").unwrap();
+        let cd = src.find("cd").unwrap();
+        for b in [ab, ab + 1, cd, cd + 1] {
+            assert_eq!(color_at(&s, b), kw, "byte {b}");
+        }
+        // The `> ` before `cd`, and the newline after `ab`, which is code too.
+        assert_ne!(color_at(&s, cd - 1), kw);
+        assert_ne!(color_at(&s, cd - 2), kw);
+    }
+
     #[test]
     fn bad_ranges_do_not_panic() {
         let s = sections("```rust\nfn é\n```\n", Some(&Garbage), 2);
         assert!(!s.is_empty());
+    }
+
+    /// Fixed ranges, whatever the code.
+    struct Fixed(Vec<(Range<usize>, TokenKind)>);
+    impl Highlighter for Fixed {
+        fn highlight(&self, _: &str, _: &str) -> Option<Vec<(Range<usize>, TokenKind)>> {
+            Some(self.0.clone())
+        }
+    }
+
+    #[test]
+    fn off_boundary_ranges_are_dropped_and_overlaps_go_to_the_later() {
+        let style = style();
+        let (kw, key) = (
+            style.code_theme.color(TokenKind::Keyword),
+            style.code_theme.color(TokenKind::Key),
+        );
+        // Code `aéb`: bytes a=0, é=1..3, b=3.
+        let src = "```rust\naéb\n```\n";
+        let at = src.find('a').unwrap();
+        // Ends inside `é`: dropped. Then 0..3 Keyword, overlapped by 1..4 Key: the later
+        // wins on 1..3, and 3..4 is Key too.
+        let h = Fixed(vec![
+            (0..2, TokenKind::Type),
+            (0..3, TokenKind::Keyword),
+            (1..4, TokenKind::Key),
+        ]);
+        let s = sections(src, Some(&h), 2);
+        assert_eq!(color_at(&s, at), kw);
+        assert_eq!(color_at(&s, at + 1), key);
+        assert_eq!(color_at(&s, at + 2), key);
+        assert_eq!(color_at(&s, at + 3), key);
+        assert_ne!(color_at(&s, at + 4), key);
     }
 
     #[test]

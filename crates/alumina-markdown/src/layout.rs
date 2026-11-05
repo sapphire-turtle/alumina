@@ -106,6 +106,16 @@ pub(crate) fn layout_highlighted(
                 continue;
             };
             let code: String = block.content.iter().map(|r| &source[r.clone()]).collect();
+            // Each piece's range in the joined code, found once.
+            let starts: Vec<(usize, usize)> = block
+                .content
+                .iter()
+                .scan(0, |at, r| {
+                    let start = *at;
+                    *at += r.len();
+                    Some((start, *at))
+                })
+                .collect();
             let Some(tokens) = highlighter.highlight(language, &code) else {
                 continue;
             };
@@ -116,15 +126,17 @@ pub(crate) fn layout_highlighted(
                 }
                 let color = style.code_theme.color(kind);
                 // The joined range back to the source: split where it crosses pieces.
-                let mut at = 0;
-                for piece in &block.content {
-                    let piece_end = at + piece.len();
+                let first = starts.partition_point(|&(_, end)| end <= start);
+                for (piece, &(at, piece_end)) in block.content[first..].iter().zip(&starts[first..])
+                {
+                    if at >= end {
+                        break;
+                    }
                     let (from, to) = (start.max(at), end.min(piece_end));
                     if from < to {
                         let base = piece.start - at;
                         paint(&(base + from..base + to), &|f| f.color = color);
                     }
-                    at = piece_end;
                 }
             }
         }

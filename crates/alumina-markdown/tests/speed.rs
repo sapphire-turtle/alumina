@@ -198,3 +198,29 @@ fn frames_with_a_highlighter() {
         report("bare context, highlighted", &source, times);
     }
 }
+
+/// One `rust` block of 2,000 lines with CRLF line ends, which the parser gives in two pieces
+/// per line, every word a token: the mapping of tokens back to the source must not be
+/// quadratic.
+#[test]
+#[ignore]
+fn frames_with_a_crlf_code_block() {
+    use alumina_markdown::egui::{Context, Pos2, RawInput, Rect, vec2};
+
+    let mut source = String::from("```rust\r\n");
+    for i in 0..2_000 {
+        source.push_str(&format!("let value{i} = other{i} + 1;\r\n"));
+    }
+    source.push_str("```\r\n");
+    let ctx = Context::default();
+    let times = frames(source.clone(), |text| {
+        let input = RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(600.0, 600.0))),
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(input, |ui| editor_with(ui, text, Some(&Words)));
+        out.textures_delta.clear();
+        black_box(ctx.tessellate(out.shapes, out.pixels_per_point));
+    });
+    report("bare context, highlighted CRLF block", &source, times);
+}
