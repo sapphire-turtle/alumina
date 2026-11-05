@@ -24,7 +24,12 @@ fn is_blank(b: u8) -> bool {
 
 fn highlight_line(line: &str, base: usize, out: &mut Vec<(Range<usize>, TokenKind)>) {
     let b = line.as_bytes();
-    let mut push = |r: Range<usize>, k: TokenKind| out.push((base + r.start..base + r.end, k));
+    // Never an empty token.
+    let mut push = |r: Range<usize>, k: TokenKind| {
+        if !r.is_empty() {
+            out.push((base + r.start..base + r.end, k));
+        }
+    };
     let mut i = 0;
     while i < b.len() && is_blank(b[i]) {
         i += 1;
@@ -45,9 +50,11 @@ fn highlight_line(line: &str, base: usize, out: &mut Vec<(Range<usize>, TokenKin
     let mut depth = 0usize;
     while i < b.len() {
         let c = b[i];
-        if is_blank(c) {
-            i += 1;
-        } else if c == b'#' && (i == 0 || is_blank(b[i - 1])) {
+        // Any whitespace, such as U+3000 or U+00A0, steps over its whole char.
+        let ch = line[i..].chars().next().unwrap_or(' ');
+        if ch.is_whitespace() {
+            i += ch.len_utf8();
+        } else if c == b'#' && (i == 0 || line[..i].ends_with(char::is_whitespace)) {
             push(i..b.len(), TokenKind::Comment);
             return;
         } else if matches!(c, b'[' | b'{') {
@@ -61,24 +68,32 @@ fn highlight_line(line: &str, base: usize, out: &mut Vec<(Range<usize>, TokenKin
         } else if c == b',' && depth > 0 {
             push(i..i + 1, TokenKind::Punctuation);
             i += 1;
+        } else if key_colon(b, i, depth) {
+            // A colon with no key before it.
+            push(i..i + 1, TokenKind::Punctuation);
+            i += 1;
         } else if matches!(c, b'&' | b'*' | b'!') {
             let mut end = i + 1;
-            while end < b.len()
-                && !is_blank(b[end])
-                && !(depth > 0 && matches!(b[end], b',' | b']' | b'}'))
-            {
-                end += 1;
+            while end < b.len() {
+                let ch = line[end..].chars().next().unwrap_or(' ');
+                if ch.is_whitespace() || (depth > 0 && matches!(ch, ',' | ']' | '}')) {
+                    break;
+                }
+                end += ch.len_utf8();
             }
             push(i..end, TokenKind::Attribute);
             i = end;
         } else {
-            let (end, kind) = scalar(line, i, depth);
-            let after = end + if kind == TokenKind::Key { 1 } else { 0 };
+            let (end, kind, colon) = scalar(line, i, depth);
             push(i..end, kind);
-            if kind == TokenKind::Key {
-                push(end..after, TokenKind::Punctuation);
+            if let Some(colon) = colon {
+                push(colon..colon + 1, TokenKind::Punctuation);
             }
-            i = after.max(i + 1);
+            // `scalar` takes at least one char, so this always moves on.
+            i = colon.map_or(end, |c| c + 1).max(i + 1);
+            while !line.is_char_boundary(i) {
+                i += 1;
+            }
         }
     }
 }
@@ -92,9 +107,9 @@ fn key_colon(b: &[u8], at: usize, depth: usize) -> bool {
             || (depth > 0 && matches!(b[at + 1], b',' | b']' | b'}')))
 }
 
-/// The scalar starting at `from`: where it ends, and its kind (`Key` when a `:` follows,
-/// which the caller marks).
-fn scalar(line: &str, from: usize, depth: usize) -> (usize, TokenKind) {
+/// The scalar starting at `from` (not at a key's colon): where it ends, its kind, and for a
+/// `Key` the position of its colon, which the caller marks.
+fn scalar(line: &str, from: usize, depth: usize) -> (usize, TokenKind, Option<usize>) {
     let b = line.as_bytes();
     let quote = b[from];
     let mut end = from;
@@ -103,7 +118,11 @@ fn scalar(line: &str, from: usize, depth: usize) -> (usize, TokenKind) {
         end += 1;
         while end < b.len() {
             if quote == b'"' && b[end] == b'\\' {
-                end += 2;
+                end += 1;
+                // The escaped char, unless it is a multi-byte one (its bytes follow on).
+                if b.get(end).is_some_and(u8::is_ascii) {
+                    end += 1;
+                }
                 continue;
             }
             if b[end] == quote {
@@ -129,6 +148,12 @@ fn scalar(line: &str, from: usize, depth: usize) -> (usize, TokenKind) {
             end += 1;
         }
     }
+    // Trailing whitespace of a plain scalar is not part of it.
+    let text_end = if quoted {
+        end
+    } else {
+        from + line[from..end].trim_end().len()
+    };
     // A key is followed by its colon (a quoted key may have blanks before it).
     let mut colon = end;
     if quoted {
@@ -136,22 +161,10 @@ fn scalar(line: &str, from: usize, depth: usize) -> (usize, TokenKind) {
             colon += 1;
         }
     }
-    if colon < b.len() && key_colon(b, colon, depth) {
-        // Trailing blanks of a plain key are not part of it.
-        let key_end = if quoted {
-            end
-        } else {
-            from + line[from..end].trim_end().len()
-        };
-        if colon == key_end {
-            return (key_end, TokenKind::Key);
-        }
+    if text_end > from && colon < b.len() && key_colon(b, colon, depth) {
+        return (text_end, TokenKind::Key, Some(colon));
     }
-    let end = if quoted {
-        end
-    } else {
-        from + line[from..end].trim_end().len()
-    };
+    let end = text_end;
     let text = &line[from..end];
     let kind = if quoted {
         TokenKind::String
@@ -162,7 +175,7 @@ fn scalar(line: &str, from: usize, depth: usize) -> (usize, TokenKind) {
     } else {
         TokenKind::String
     };
-    (end, kind)
+    (end, kind, None)
 }
 
 fn is_number(text: &str) -> bool {
@@ -239,5 +252,31 @@ mod tests {
         assert!(has(c, "null", TokenKind::Constant));
         assert!(has(c, "~", TokenKind::Constant));
         assert!(has(c, "no", TokenKind::String));
+    }
+
+    #[test]
+    fn unicode_whitespace_and_stray_colons_are_safe() {
+        for code in [
+            "a: 1\u{3000}",
+            "a: x\u{a0}",
+            "名前: 太郎\u{3000}",
+            ": x",
+            "k : v",
+            "k\u{3000}: v",
+            "a: \"\\太\"",
+            "a: \"\\太",
+            "- \u{3000}# c",
+        ] {
+            for (r, _) in highlight(code) {
+                assert!(!r.is_empty(), "{code:?}: empty token");
+                assert!(
+                    code.is_char_boundary(r.start) && code.is_char_boundary(r.end),
+                    "{code:?}: {r:?} off a char boundary"
+                );
+            }
+        }
+        assert!(has("a: 1\u{3000}", "1", TokenKind::Number));
+        assert!(has("k : v", "k", TokenKind::Key));
+        assert!(has("a: x\u{a0}", "x", TokenKind::String));
     }
 }
