@@ -24,6 +24,8 @@ corundum-framework-gui = { version = "0.7.0", default-features = false, features
 # `LauncherSpec`, which gives the window its icon (and the app its entry in the app menu);
 # the version corundum-framework-gui is built with.
 corundum-framework-platform = "0.7.0"
+# The Rust highlighter: syntect's bundled syntaxes, with the pure-Rust regex engine.
+syntect = { version = "5", default-features = false, features = ["default-syntaxes", "regex-fancy"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["fmt", "env-filter"] }
 

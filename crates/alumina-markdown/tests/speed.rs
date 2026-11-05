@@ -72,16 +72,55 @@ fn frames(mut source: String, mut run: impl FnMut(&mut String)) -> (Duration, Du
     (start.elapsed() / RUNS, unchanged)
 }
 
+/// Every ASCII word of the code is a keyword: cheap, and as many tokens as can be.
+struct Words;
+
+impl alumina_markdown::Highlighter for Words {
+    fn highlight(
+        &self,
+        language: &str,
+        code: &str,
+    ) -> Option<Vec<(std::ops::Range<usize>, alumina_markdown::TokenKind)>> {
+        if language != "rust" {
+            return None;
+        }
+        let mut tokens = Vec::new();
+        let mut start = None;
+        for (i, b) in code.bytes().chain(std::iter::once(b' ')).enumerate() {
+            match (b.is_ascii_alphanumeric(), start) {
+                (true, None) => start = Some(i),
+                (false, Some(s)) => {
+                    tokens.push((s..i, alumina_markdown::TokenKind::Keyword));
+                    start = None;
+                }
+                _ => {}
+            }
+        }
+        Some(tokens)
+    }
+}
+
 fn editor(ui: &mut alumina_markdown::egui::Ui, text: &mut String) {
+    editor_with(ui, text, None);
+}
+
+fn editor_with(
+    ui: &mut alumina_markdown::egui::Ui,
+    text: &mut String,
+    highlighter: Option<&dyn alumina_markdown::Highlighter>,
+) {
     use alumina_markdown::MarkdownEditor;
     use alumina_markdown::egui::{Id, MissingGlyphPolicy, ScrollArea};
     // egui's fonts have no Japanese: draw tofu instead of panicking.
     ui.ctx().set_missing_glyph_policy(MissingGlyphPolicy::Tofu);
     ScrollArea::vertical().show(ui, |ui| {
-        MarkdownEditor::new(text)
+        let editor = MarkdownEditor::new(text)
             .id(Id::unique("big"))
-            .read_only(true)
-            .show(ui);
+            .read_only(true);
+        match highlighter {
+            Some(h) => editor.highlighter(h).show(ui),
+            None => editor.show(ui),
+        };
     });
 }
 
@@ -136,4 +175,52 @@ fn frames_without_accesskit() {
         });
         report("bare context", &source, times);
     }
+}
+
+/// The bare-context frames with a highlighter that colours every word of the `rust` blocks.
+#[test]
+#[ignore]
+fn frames_with_a_highlighter() {
+    use alumina_markdown::egui::{Context, Pos2, RawInput, Rect, vec2};
+
+    for target in [TARGET_LINES, 1_000] {
+        let source = document(target);
+        let ctx = Context::default();
+        let times = frames(source.clone(), |text| {
+            let input = RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(600.0, 600.0))),
+                ..Default::default()
+            };
+            let mut out = ctx.run_ui(input, |ui| editor_with(ui, text, Some(&Words)));
+            out.textures_delta.clear();
+            black_box(ctx.tessellate(out.shapes, out.pixels_per_point));
+        });
+        report("bare context, highlighted", &source, times);
+    }
+}
+
+/// One `rust` block of 2,000 lines with CRLF line ends, which the parser gives in two pieces
+/// per line, every word a token: the mapping of tokens back to the source must not be
+/// quadratic.
+#[test]
+#[ignore]
+fn frames_with_a_crlf_code_block() {
+    use alumina_markdown::egui::{Context, Pos2, RawInput, Rect, vec2};
+
+    let mut source = String::from("```rust\r\n");
+    for i in 0..2_000 {
+        source.push_str(&format!("let value{i} = other{i} + 1;\r\n"));
+    }
+    source.push_str("```\r\n");
+    let ctx = Context::default();
+    let times = frames(source.clone(), |text| {
+        let input = RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(600.0, 600.0))),
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(input, |ui| editor_with(ui, text, Some(&Words)));
+        out.textures_delta.clear();
+        black_box(ctx.tessellate(out.shapes, out.pixels_per_point));
+    });
+    report("bare context, highlighted CRLF block", &source, times);
 }

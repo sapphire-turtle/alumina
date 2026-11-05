@@ -1,6 +1,7 @@
 //! [`CodeEditor`]: a monospace `TextEdit` that takes Enter, Tab, Backspace and the closing
 //! brackets for the [`indent`](crate::indent) edits.
 
+use std::hash::{Hash, Hasher};
 use std::ops::Range;
 use std::sync::Arc;
 
@@ -8,6 +9,7 @@ use egui::text::{CCursor, CCursorRange, LayoutJob};
 use egui::text_edit::{TextEditOutput, TextEditState};
 use egui::{Context, Event, FocusDirection, Id, ImeEvent, Key, Modifiers, TextEdit, Ui};
 
+use crate::highlight::{CodeTheme, Highlighter, highlighted_job};
 use crate::indent::{Edit, Indent, backspace, close, indent, newline, outdent};
 
 /// The byte offset of char `c` in `s`; past the end, `s.len()`.
@@ -247,24 +249,63 @@ fn take_ime_enters(events: &mut Vec<Event>, mut composing: bool) -> (bool, bool)
     (composing, ime)
 }
 
-/// The layout of `text`: the one place the text gets its look.
-fn layout_job(ui: &Ui, text: &str, wrap_width: f32) -> LayoutJob {
+/// The font and colour a `TextEdit` draws its text in.
+fn text_look(ui: &Ui) -> (egui::FontId, egui::Color32) {
     let font = egui::TextStyle::Monospace.resolve(ui.style());
-    // What a `TextEdit` draws its text in.
     let color = ui
         .visuals()
         .override_text_color
         .unwrap_or_else(|| ui.visuals().widgets.inactive.text_color());
+    (font, color)
+}
+
+/// The plain layout of `text`.
+fn layout_job(ui: &Ui, text: &str, wrap_width: f32) -> LayoutJob {
+    let (font, color) = text_look(ui);
     LayoutJob::simple(text.to_owned(), font, color, wrap_width)
 }
 
+/// The layout of `text`: the one place the text gets its look. With a highlighter, the job
+/// is kept in `ui.data` under `id` until its key (the text, language, theme, width, font and
+/// colour) changes, so the highlighter runs once per change, not per frame.
+fn styled_job(
+    ui: &Ui,
+    id: Id,
+    text: &str,
+    wrap_width: f32,
+    highlight: Option<(&dyn Highlighter, &str, &CodeTheme)>,
+) -> Arc<LayoutJob> {
+    let Some((highlighter, language, theme)) = highlight else {
+        return Arc::new(layout_job(ui, text, wrap_width));
+    };
+    let (font, color) = text_look(ui);
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    (text, language, theme, wrap_width.to_bits(), &font, color).hash(&mut hasher);
+    let key = hasher.finish();
+    let slot = id.with("highlight");
+    if let Some((k, job)) = ui.data(|d| d.get_temp::<(u64, Arc<LayoutJob>)>(slot))
+        && k == key
+    {
+        return job;
+    }
+    let job = match highlighter.highlight(language, text) {
+        Some(tokens) => highlighted_job(text, &tokens, font, color, theme, wrap_width),
+        None => layout_job(ui, text, wrap_width),
+    };
+    let job = Arc::new(job);
+    ui.data_mut(|d| d.insert_temp(slot, (key, job.clone())));
+    job
+}
+
 /// A code editor, or a read-only view with the same look.
-#[derive(Debug)]
 pub struct CodeEditor<'t> {
     text: &'t mut String,
     id: Option<Id>,
     read_only: bool,
     indent: Indent,
+    language: String,
+    highlighter: Option<&'t dyn Highlighter>,
+    theme: Option<CodeTheme>,
     desired_rows: usize,
     accessible_label: String,
 }
@@ -277,6 +318,9 @@ impl<'t> CodeEditor<'t> {
             id: None,
             read_only: false,
             indent: Indent::default(),
+            language: String::new(),
+            highlighter: None,
+            theme: None,
             desired_rows: 8,
             accessible_label: String::from("Code"),
         }
@@ -301,6 +345,26 @@ impl<'t> CodeEditor<'t> {
     /// [`Indent::default`]. It is the app's to choose and keep.
     pub fn indent(mut self, indent: Indent) -> Self {
         self.indent = indent;
+        self
+    }
+
+    /// The language of the text, as the [`Highlighter`] knows it; empty by default.
+    pub fn language(mut self, language: impl Into<String>) -> Self {
+        self.language = language.into();
+        self
+    }
+
+    /// Colour the text with `highlighter`. It runs when the text, the language, the theme,
+    /// the width or the font changes; a highlighter swapped for another takes effect at the
+    /// next such change.
+    pub fn highlighter(mut self, highlighter: &'t dyn Highlighter) -> Self {
+        self.highlighter = Some(highlighter);
+        self
+    }
+
+    /// The colours of the tokens; defaults to [`CodeTheme::from_visuals`] of the `ui`.
+    pub fn theme(mut self, theme: CodeTheme) -> Self {
+        self.theme = Some(theme);
         self
     }
 
@@ -332,9 +396,18 @@ impl<'t> CodeEditor<'t> {
             forget_composing(ui.ctx(), id);
             false
         };
+        let theme = self.highlighter.map(|_| {
+            self.theme
+                .unwrap_or_else(|| CodeTheme::from_visuals(ui.visuals()))
+        });
+        let highlighter = self.highlighter;
+        let language = self.language;
         let mut layouter = |ui: &Ui, buf: &dyn egui::TextBuffer, wrap_width: f32| {
-            let job = layout_job(ui, buf.as_str(), wrap_width);
-            ui.fonts_mut(|f| f.layout_job(job))
+            let highlight = highlighter
+                .zip(theme.as_ref())
+                .map(|(h, t)| (h, language.as_str(), t));
+            let job = styled_job(ui, id, buf.as_str(), wrap_width, highlight);
+            ui.fonts_mut(|f| f.layout_job((*job).clone()))
         };
         let rows = self.desired_rows;
         let mut text_edit = if self.read_only {
@@ -403,6 +476,23 @@ fn scroll_to_cursor(ui: &Ui, out: &TextEditOutput) {
     let offset = out.galley_pos.to_vec2() - egui::vec2(galley.rect.left(), 0.0);
     let rect = galley.pos_from_cursor(range.primary).translate(offset);
     ui.scroll_to_rect(rect, None);
+}
+
+impl std::fmt::Debug for CodeEditor<'_> {
+    /// A `dyn Highlighter` is not `Debug`: only whether there is one is shown.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CodeEditor")
+            .field("text", &self.text)
+            .field("id", &self.id)
+            .field("read_only", &self.read_only)
+            .field("indent", &self.indent)
+            .field("language", &self.language)
+            .field("highlighter", &self.highlighter.is_some())
+            .field("theme", &self.theme)
+            .field("desired_rows", &self.desired_rows)
+            .field("accessible_label", &self.accessible_label)
+            .finish()
+    }
 }
 
 /// What [`CodeEditor::show`] returns.

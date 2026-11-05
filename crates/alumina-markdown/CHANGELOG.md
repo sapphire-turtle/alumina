@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- *(alumina-markdown)* a document starting with `---` ... `---` is now read as front matter, where it was a thematic break and a setext heading
+- *(alumina-markdown)* depends on alumina-code, whose `Highlighter`, `TokenKind` and `CodeTheme` it re-exports
+- *(alumina-markdown)* **breaking:** `MarkdownEditor` is no longer `Send`, `Sync` or `RefUnwindSafe`, as it can hold a `&dyn Highlighter`
+
+### Added
+
+- *(alumina-markdown)* YAML front matter, shown as code
+- *(alumina-markdown)* code blocks and front matter coloured by the app's Highlighter
+
 ## [0.1.0](https://github.com/sapphire-turtle/alumina/releases/tag/alumina-markdown-v0.1.0) - 2026-11-04
 
 ### Added

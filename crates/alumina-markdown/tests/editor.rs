@@ -957,3 +957,288 @@ fn toolbar_edit_scrolls_to_the_cursor() {
         "cursor {cursor:?} outside clip {clip:?}"
     );
 }
+
+mod highlighting {
+    use std::ops::Range;
+    use std::sync::{Arc, Mutex};
+
+    use alumina_markdown::egui::epaint::text::ByteRangeExt as _;
+    use alumina_markdown::egui::{Color32, Id};
+    use alumina_markdown::{
+        CodeTheme, Highlighter, MarkdownEditor, MarkdownStyle, TokenKind, egui,
+    };
+    use egui_kittest::Harness;
+
+    /// `fn` is a `Keyword` in `rust`, each `key` before `:` a `Key` in `yaml`; it records the
+    /// languages it is asked.
+    #[derive(Default)]
+    struct Test {
+        asked: Mutex<Vec<String>>,
+    }
+
+    impl Highlighter for Test {
+        fn highlight(&self, language: &str, code: &str) -> Option<Vec<(Range<usize>, TokenKind)>> {
+            self.asked.lock().unwrap().push(language.to_owned());
+            match language {
+                "rust" => Some(
+                    code.match_indices("fn")
+                        .map(|(i, m)| (i..i + m.len(), TokenKind::Keyword))
+                        .collect(),
+                ),
+                "yaml" => Some(
+                    code.match_indices(':')
+                        .map(|(i, _)| {
+                            let start = code[..i].rfind('\n').map_or(0, |n| n + 1);
+                            (start..i, TokenKind::Key)
+                        })
+                        .collect(),
+                ),
+                _ => None,
+            }
+        }
+    }
+
+    struct Garbage;
+    impl Highlighter for Garbage {
+        #[allow(clippy::reversed_empty_ranges)]
+        fn highlight(&self, _: &str, _: &str) -> Option<Vec<(Range<usize>, TokenKind)>> {
+            Some(vec![(0..999, TokenKind::Keyword), (5..2, TokenKind::Key)])
+        }
+    }
+
+    struct Nothing;
+    impl Highlighter for Nothing {
+        fn highlight(&self, _: &str, _: &str) -> Option<Vec<(Range<usize>, TokenKind)>> {
+            None
+        }
+    }
+
+    /// The job of the editor over `text` for some frames: its sections as (range, colour).
+    fn sections(
+        text: &str,
+        highlighter: Option<&dyn Highlighter>,
+        frames: usize,
+    ) -> Vec<(Range<usize>, Color32)> {
+        let out = Arc::new(Mutex::new(Vec::new()));
+        let sink = out.clone();
+        let id = Id::unique("hl");
+        let mut h = Harness::builder().with_size([400.0, 200.0]).build_ui_state(
+            move |ui, text: &mut String| {
+                let mut e = MarkdownEditor::new(text).id(id);
+                if let Some(h) = highlighter {
+                    e = e.highlighter(h);
+                }
+                let o = e.show(ui);
+                *sink.lock().unwrap() = o
+                    .text_edit
+                    .galley
+                    .job
+                    .sections
+                    .iter()
+                    .map(|s| (s.byte_range.as_usize(), s.format.color))
+                    .collect();
+            },
+            text.to_owned(),
+        );
+        for _ in 0..frames {
+            h.step();
+        }
+        out.lock().unwrap().clone()
+    }
+
+    fn color_at(sections: &[(Range<usize>, Color32)], byte: usize) -> Color32 {
+        sections
+            .iter()
+            .find(|(r, _)| r.contains(&byte))
+            .expect("a section")
+            .1
+    }
+
+    fn style() -> MarkdownStyle {
+        MarkdownStyle::from_visuals(&egui::Visuals::dark())
+    }
+
+    #[test]
+    fn front_matter_is_highlighted_as_yaml() {
+        let t = Test::default();
+        let s = sections("---\ntitle: a\n---\n", Some(&t), 2);
+        let style = style();
+        assert_eq!(t.asked.lock().unwrap()[0], "yaml");
+        for b in 4..9 {
+            assert_eq!(color_at(&s, b), style.code_theme.color(TokenKind::Key));
+        }
+        assert_eq!(color_at(&s, 0), style.mark_color);
+        assert_eq!(color_at(&s, 13), style.mark_color);
+        assert_eq!(color_at(&s, 10), style.text_color);
+    }
+
+    #[test]
+    fn a_code_block_in_a_quote_lands_on_its_code() {
+        let t = Test::default();
+        let src = "> ```rust\n> fn a\n> ```\n";
+        let s = sections(src, Some(&t), 2);
+        let style = style();
+        let at = src.find("fn").unwrap();
+        let kw = style.code_theme.color(TokenKind::Keyword);
+        assert_eq!(color_at(&s, at), kw);
+        assert_eq!(color_at(&s, at + 1), kw);
+        let gt = src.find("> fn").unwrap();
+        assert_ne!(color_at(&s, gt), kw);
+        assert_ne!(color_at(&s, gt + 1), kw);
+        assert_ne!(color_at(&s, at + 2), kw);
+    }
+
+    #[test]
+    fn the_language_is_the_first_word_of_the_info() {
+        let t = Test::default();
+        sections("```rust ignore\nfn\n```", Some(&t), 2);
+        assert_eq!(t.asked.lock().unwrap()[0], "rust");
+    }
+
+    #[test]
+    fn an_indented_block_is_not_highlighted() {
+        let t = Test::default();
+        sections("para\n\n    fn a\n", Some(&t), 2);
+        sections("```\nfn a\n```\n", Some(&t), 2);
+        assert!(t.asked.lock().unwrap().is_empty());
+    }
+
+    /// Asserts which of the bytes of `source` are `Keyword`-coloured: exactly `expected`.
+    fn assert_keywords(source: &str, expected: Range<usize>) {
+        let kw = style().code_theme.color(TokenKind::Keyword);
+        let s = sections(source, Some(&Test::default()), 2);
+        for b in 0..source.len() {
+            assert_eq!(
+                color_at(&s, b) == kw,
+                expected.contains(&b),
+                "byte {b} of {source:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_token_on_a_later_line_of_a_quote_lands_on_its_code() {
+        let src = "> ```rust\n> x\n> fn a\n> ```\n";
+        let at = src.find("fn").unwrap();
+        assert_keywords(src, at..at + 2);
+    }
+
+    #[test]
+    fn a_token_on_a_later_line_of_a_list_item_lands_on_its_code() {
+        let src = "- a\n\n  ```rust\n  x\n  fn a\n  ```\n";
+        let at = src.find("fn").unwrap();
+        assert_keywords(src, at..at + 2);
+    }
+
+    #[test]
+    fn a_token_in_a_crlf_block_leaves_the_returns() {
+        let src = "```rust\r\nx\r\nfn a\r\n```\r\n";
+        let at = src.find("fn").unwrap();
+        assert_keywords(src, at..at + 2);
+    }
+
+    /// One token over all of the code.
+    struct Whole;
+    impl Highlighter for Whole {
+        fn highlight(&self, _: &str, code: &str) -> Option<Vec<(Range<usize>, TokenKind)>> {
+            Some(vec![(0..code.len(), TokenKind::Keyword)])
+        }
+    }
+
+    #[test]
+    fn a_token_across_pieces_is_split_around_the_prefixes() {
+        let src = "> ```rust\n> ab\n> cd\n> ```\n";
+        let kw = style().code_theme.color(TokenKind::Keyword);
+        let s = sections(src, Some(&Whole), 2);
+        let ab = src.find("ab").unwrap();
+        let cd = src.find("cd").unwrap();
+        for b in [ab, ab + 1, cd, cd + 1] {
+            assert_eq!(color_at(&s, b), kw, "byte {b}");
+        }
+        // The `> ` before `cd`, and the newline after `ab`, which is code too.
+        assert_ne!(color_at(&s, cd - 1), kw);
+        assert_ne!(color_at(&s, cd - 2), kw);
+    }
+
+    #[test]
+    fn bad_ranges_do_not_panic() {
+        let s = sections("```rust\nfn é\n```\n", Some(&Garbage), 2);
+        assert!(!s.is_empty());
+    }
+
+    /// Fixed ranges, whatever the code.
+    struct Fixed(Vec<(Range<usize>, TokenKind)>);
+    impl Highlighter for Fixed {
+        fn highlight(&self, _: &str, _: &str) -> Option<Vec<(Range<usize>, TokenKind)>> {
+            Some(self.0.clone())
+        }
+    }
+
+    #[test]
+    fn off_boundary_ranges_are_dropped_and_overlaps_go_to_the_later() {
+        let style = style();
+        let (kw, key) = (
+            style.code_theme.color(TokenKind::Keyword),
+            style.code_theme.color(TokenKind::Key),
+        );
+        // Code `aéb\nçd`: a=0, é=1..3, b=3, newline=4, ç=5..7, d=7.
+        let src = "```rust\naéb\nçd\n```\n";
+        let at = src.find('a').unwrap();
+        // 0..3 Keyword, overlapped by 1..4 Key: the later wins on 1..3, and 3..4 is Key too.
+        // 6..8 starts inside `ç`: dropped, and nothing overwrites those bytes.
+        let h = Fixed(vec![
+            (0..3, TokenKind::Keyword),
+            (1..4, TokenKind::Key),
+            (6..8, TokenKind::Type),
+        ]);
+        let s = sections(src, Some(&h), 2);
+        assert_eq!(color_at(&s, at), kw);
+        assert_eq!(color_at(&s, at + 1), key);
+        assert_eq!(color_at(&s, at + 2), key);
+        assert_eq!(color_at(&s, at + 3), key);
+        let plain = color_at(&s, at + 4);
+        assert_ne!(plain, key);
+        for b in at + 5..at + 8 {
+            assert_eq!(color_at(&s, b), plain, "byte {b}");
+        }
+    }
+
+    #[test]
+    fn the_highlighter_runs_once_for_unchanged_text() {
+        let t = Test::default();
+        let id = Id::unique("once");
+        let mut h = Harness::builder().with_size([400.0, 200.0]).build_ui_state(
+            |ui, text: &mut String| {
+                MarkdownEditor::new(text).id(id).highlighter(&t).show(ui);
+            },
+            "```rust\nfn\n```\n".to_owned(),
+        );
+        for _ in 0..6 {
+            h.step();
+        }
+        assert_eq!(t.asked.lock().unwrap().len(), 1);
+        h.state_mut().push('x');
+        for _ in 0..3 {
+            h.step();
+        }
+        assert_eq!(t.asked.lock().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn no_highlighter_looks_as_before() {
+        let src = "# t\n---\na: 1\n---\n```rust\nfn\n```\n> ```rust\n> fn\n> ```\n";
+        assert_eq!(sections(src, None, 2), sections(src, Some(&Nothing), 2));
+    }
+
+    #[test]
+    fn the_theme_is_part_of_the_style() {
+        let a = style();
+        let mut b = style();
+        b.code_theme.set_color(TokenKind::Key, Color32::RED);
+        assert_eq!(
+            a.code_theme,
+            CodeTheme::from_visuals(&egui::Visuals::dark())
+        );
+        assert_ne!(a, b);
+    }
+}

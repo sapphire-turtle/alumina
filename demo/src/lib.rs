@@ -4,6 +4,7 @@
 
 mod code;
 mod datetime;
+mod highlight;
 mod markdown;
 
 use corundum_framework_gui::egui;

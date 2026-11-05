@@ -5,7 +5,9 @@
 
 use std::ops::Range;
 
-use pulldown_cmark::{CodeBlockKind, Event, LinkType, Options, Parser, Tag, TagEnd};
+use pulldown_cmark::{
+    CodeBlockKind, Event, LinkType, MetadataBlockKind, Options, Parser, Tag, TagEnd,
+};
 
 /// A parsed source: its blocks and inlines, in source order.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -27,6 +29,10 @@ pub struct Block {
     pub range: Range<usize>,
     /// The block's own marks, in source order.
     pub marks: Vec<Range<usize>>,
+    /// For a [`BlockKind::CodeBlock`] or [`BlockKind::FrontMatter`], the byte ranges of its
+    /// code in source order, one per piece of text: without the fences, and without the
+    /// prefix of a line in a list or a quote. Empty for every other block.
+    pub content: Vec<Range<usize>>,
 }
 
 /// The kinds of [`Block`].
@@ -61,6 +67,8 @@ pub enum BlockKind {
     },
     /// `---`, `***` or `___`.
     ThematicBreak,
+    /// The YAML block at the very start, between `---` and `---` (or `...`).
+    FrontMatter,
 }
 
 /// An inline span of a paragraph or heading.
@@ -104,7 +112,75 @@ enum Container {
 
 /// Reads `source` into its blocks.
 pub fn parse(source: &str) -> Doc {
+    let Some((front, rest)) = front_matter(source) else {
+        return parse_blocks(source);
+    };
+    // The rest is read on its own, so a later `---` pair is not read as metadata.
+    let mut doc = parse_blocks(&source[rest..]);
+    doc.shift(rest);
+    doc.blocks.insert(0, front);
+    doc
+}
+
+/// The front matter at the very start and where the text after it begins. pulldown-cmark
+/// also reads a metadata block further down, so only one at 0 counts.
+fn front_matter(source: &str) -> Option<(Block, usize)> {
+    if !source.starts_with("---") {
+        return None;
+    }
+    let options = Options::ENABLE_YAML_STYLE_METADATA_BLOCKS;
+    let mut events = Parser::new_ext(source, options).into_offset_iter();
+    let Some((Event::Start(Tag::MetadataBlock(MetadataBlockKind::YamlStyle)), range)) =
+        events.next()
+    else {
+        return None;
+    };
+    let mut block = Block {
+        kind: BlockKind::FrontMatter,
+        marks: front_matter_marks(source, &range),
+        range: range.clone(),
+        content: Vec::new(),
+    };
+    for (event, at) in events {
+        match event {
+            Event::Text(_) => block.content.push(at),
+            Event::End(TagEnd::MetadataBlock(_)) => break,
+            _ => {}
+        }
+    }
+    let after = &source[range.end..];
+    let line_end = after
+        .strip_prefix("\r\n")
+        .map(|_| 2)
+        .or_else(|| after.strip_prefix('\n').map(|_| 1))
+        .unwrap_or(0);
+    Some((block, range.end + line_end))
+}
+
+impl Doc {
+    /// Moves every range by `by` bytes.
+    fn shift(&mut self, by: usize) {
+        let mv = |r: &mut Range<usize>| *r = r.start + by..r.end + by;
+        for b in &mut self.blocks {
+            mv(&mut b.range);
+            b.marks.iter_mut().for_each(mv);
+            b.content.iter_mut().for_each(mv);
+        }
+        for i in &mut self.inlines {
+            mv(&mut i.range);
+            i.marks.iter_mut().for_each(mv);
+            if let InlineKind::Link { text, .. } = &mut i.kind {
+                mv(text);
+            }
+        }
+    }
+}
+
+/// Reads `source` as it is, with no front matter.
+fn parse_blocks(source: &str) -> Doc {
     let options = Options::ENABLE_STRIKETHROUGH | Options::ENABLE_TASKLISTS;
+    // Whether the open block collects its text as `content`.
+    let mut in_code = false;
     let mut doc = Doc::default();
     let mut stack: Vec<Container> = Vec::new();
     // Open inlines: their index in `doc.inlines` and the span of what is inside.
@@ -174,6 +250,7 @@ pub fn parse(source: &str) -> Doc {
                         Vec::new()
                     };
                     push(&mut doc, BlockKind::CodeBlock { info }, range, marks);
+                    in_code = true;
                 }
                 Tag::Emphasis => open_inline(&mut doc, &mut open, InlineKind::Emphasis, range),
                 Tag::Strong => open_inline(&mut doc, &mut open, InlineKind::Strong, range),
@@ -211,6 +288,12 @@ pub fn parse(source: &str) -> Doc {
                 });
                 grow(&mut open, &range);
             }
+            Event::Text(_) if in_code => {
+                if let Some(block) = doc.blocks.last_mut() {
+                    block.content.push(range);
+                }
+            }
+            Event::End(TagEnd::CodeBlock) => in_code = false,
             Event::Text(_) | Event::SoftBreak | Event::HardBreak => grow(&mut open, &range),
             Event::End(TagEnd::BlockQuote(_) | TagEnd::List(_)) => {
                 stack.pop();
@@ -345,7 +428,12 @@ fn code_marks(source: &str, range: &Range<usize>) -> Vec<Range<usize>> {
 }
 
 fn push(doc: &mut Doc, kind: BlockKind, range: Range<usize>, marks: Vec<Range<usize>>) {
-    doc.blocks.push(Block { kind, range, marks });
+    doc.blocks.push(Block {
+        kind,
+        range,
+        marks,
+        content: Vec::new(),
+    });
 }
 
 /// `source[start..end]` without its container prefix (spaces, tabs, `>`) and trailing whitespace, or
@@ -439,6 +527,19 @@ fn quote_marks(source: &str, range: &Range<usize>, depth: usize) -> Vec<Range<us
                 marks.push(line.start + pos..line.start + pos + 1);
             }
             pos += 1;
+        }
+    }
+    marks
+}
+
+/// The opening `---` and the closing `---` or `...` of a front matter, without line endings.
+fn front_matter_marks(source: &str, range: &Range<usize>) -> Vec<Range<usize>> {
+    let lines = lines(source, range);
+    let mut marks: Vec<Range<usize>> = lines.first().cloned().into_iter().collect();
+    if let Some(last) = lines.last().filter(|_| lines.len() > 1) {
+        let text = source[last.clone()].trim_end();
+        if text == "---" || text == "..." {
+            marks.push(last.start..last.start + text.len());
         }
     }
     marks
@@ -806,5 +907,130 @@ mod tests {
                 }
             }
         }
+    }
+
+    fn joined(src: &str, b: &Block) -> String {
+        b.content.iter().map(|r| &src[r.clone()]).collect()
+    }
+
+    #[test]
+    fn front_matter_at_the_start() {
+        let src = "---\ntitle: a\n---\n\n# h\n";
+        let doc = parse(src);
+        assert_eq!(doc.blocks[0].kind, BlockKind::FrontMatter);
+        assert_eq!(doc.blocks[0].range, 0..16);
+        assert_eq!(doc.blocks[0].marks, [0..3, 13..16]);
+        assert_eq!(doc.blocks[0].content, vec![4..13]);
+        assert_eq!(doc.blocks[1].kind, BlockKind::Heading { level: 1 });
+    }
+
+    #[test]
+    fn front_matter_closed_by_dots() {
+        let src = "---\na: 1\n...\n";
+        let doc = parse(src);
+        assert_eq!(doc.blocks[0].kind, BlockKind::FrontMatter);
+        assert_eq!(doc.blocks[0].marks, [0..3, 9..12]);
+    }
+
+    #[test]
+    fn dashes_elsewhere_are_not_front_matter() {
+        let doc = parse("a\n\n---\nb: 1\n---\n");
+        assert!(!kinds(&doc).contains(&BlockKind::FrontMatter));
+        assert!(kinds(&doc).contains(&BlockKind::ThematicBreak));
+    }
+
+    #[test]
+    fn an_unclosed_front_matter_while_typing() {
+        for src in ["---\n", "---\ntitle: a\n"] {
+            assert!(
+                !kinds(&parse(src)).contains(&BlockKind::FrontMatter),
+                "{src:?}"
+            );
+        }
+        let doc = parse("---\ntitle: a\n\n# h");
+        assert!(kinds(&doc).contains(&BlockKind::Heading { level: 1 }));
+    }
+
+    #[test]
+    fn a_rule_at_the_start_does_not_make_later_dashes_front_matter() {
+        let doc = parse("---\n\ntext\n\n---\nb: 1\n---\n");
+        assert!(!kinds(&doc).contains(&BlockKind::FrontMatter));
+        assert!(kinds(&doc).contains(&BlockKind::ThematicBreak));
+    }
+
+    #[test]
+    fn code_block_content() {
+        let src = "```rust\nfn a() {}\n```\n";
+        let doc = parse(src);
+        assert_eq!(doc.blocks[0].content, vec![8..18]);
+
+        let src = "> ```rust\n> let a;\n> ```\n";
+        let doc = parse(src);
+        let code = doc
+            .blocks
+            .iter()
+            .find(|b| matches!(b.kind, BlockKind::CodeBlock { .. }))
+            .unwrap();
+        assert_eq!(joined(src, code), "let a;\n");
+        assert!(code.content.iter().all(|r| !src[r.clone()].contains('>')));
+
+        let src = "- a\n\n  ```yaml\n  k: v\n  ```\n";
+        let doc = parse(src);
+        let code = doc
+            .blocks
+            .iter()
+            .find(|b| matches!(b.kind, BlockKind::CodeBlock { .. }))
+            .unwrap();
+        assert_eq!(joined(src, code), "k: v\n");
+    }
+
+    #[test]
+    fn a_later_pair_does_not_drop_the_front_matter() {
+        let src = "---\na: 1\n---\n\ntext\n\n---\nb: 1\n---\n";
+        let doc = parse(src);
+        assert_eq!(doc.blocks[0].kind, BlockKind::FrontMatter);
+        assert_eq!(doc.blocks[0].range, 0..12);
+        assert_eq!(doc.blocks[0].marks, [0..3, 9..12]);
+        assert_eq!(
+            kinds(&doc),
+            [
+                BlockKind::FrontMatter,
+                BlockKind::Paragraph,
+                BlockKind::ThematicBreak,
+                BlockKind::Heading { level: 2 },
+            ]
+        );
+        assert_eq!(&src[doc.blocks[1].range.clone()], "text\n");
+        assert_eq!(&src[doc.blocks[2].range.clone()], "---\n");
+        assert_eq!(&src[doc.blocks[3].range.clone()], "b: 1\n---\n");
+    }
+
+    #[test]
+    fn front_matter_with_crlf() {
+        let src = "---\r\na: 1\r\n---\r\n\r\n# h\r\n";
+        let doc = parse(src);
+        assert_eq!(doc.blocks[0].kind, BlockKind::FrontMatter);
+        assert_eq!(marks(src, &doc.blocks[0]), ["---", "---"]);
+        // pulldown-cmark's text pieces leave the `\r` out.
+        assert_eq!(joined(src, &doc.blocks[0]), "a: 1\n");
+        assert_eq!(doc.blocks[1].kind, BlockKind::Heading { level: 1 });
+        assert_eq!(&src[doc.blocks[1].range.clone()], "# h\r\n");
+    }
+
+    #[test]
+    fn a_link_after_front_matter() {
+        let src = "---\na: 1\n---\n\nsee [x](http://y) now\n";
+        let doc = parse(src);
+        let link = doc
+            .inlines
+            .iter()
+            .find(|i| matches!(i.kind, InlineKind::Link { .. }))
+            .unwrap();
+        assert_eq!(&src[link.range.clone()], "[x](http://y)");
+        let InlineKind::Link { text, .. } = &link.kind else {
+            unreachable!()
+        };
+        assert_eq!(&src[text.clone()], "x");
+        assert_eq!(imarks(src, link), ["[", "](http://y)"]);
     }
 }

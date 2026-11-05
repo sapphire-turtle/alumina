@@ -1,3 +1,12 @@
+---
+title: Alumina sample
+date: 2026-11-05
+tags:
+  - egui
+  - markdown
+draft: false
+---
+
 # Alumina 見出し🎌
 
 Setext heading
@@ -13,6 +22,11 @@ A [link](https://example.com), an autolink <https://example.org>, and a [referen
 
 - bullet one
 - bullet two
+  ```yaml
+  # settings
+  name: "alumina"
+  debug: false
+  ```
   1. nested number
   2. another **number**
 - [ ] open task
@@ -25,7 +39,11 @@ A [link](https://example.com), an autolink <https://example.org>, and a [referen
 > > nested quote with `code`
 
 ```rust
-let a = "**not bold**";
+// Not bold, not markdown: code.
+fn main() {
+    let a = "**not bold**";
+    println!("{a}");
+}
 ```
 
     indented code

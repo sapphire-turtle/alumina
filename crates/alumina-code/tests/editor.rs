@@ -4,9 +4,13 @@ use alumina_code::egui::accesskit::Role;
 use alumina_code::egui::text::{CCursor, CCursorRange};
 use alumina_code::egui::text_edit::TextEditState;
 use alumina_code::egui::{Event, Id, ImeEvent, Key, MissingGlyphPolicy, Modifiers};
-use alumina_code::{CodeEditor, Indent};
+use alumina_code::{CodeEditor, CodeTheme, Highlighter, Indent, TokenKind};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable as _;
+use std::ops::Range;
+use std::rc::Rc;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[derive(Default)]
 struct State {
@@ -282,4 +286,96 @@ fn the_indent_unit_is_the_app_s() {
     set_cursor(&mut h, 1);
     key(&mut h, Key::Enter, Modifiers::NONE);
     assert_eq!(h.state().text, "{\n\t\n}");
+}
+
+/// Marks every `fn` as a keyword for the language `"test"`, and counts its calls.
+#[derive(Default)]
+struct Fns {
+    calls: AtomicUsize,
+}
+
+impl Highlighter for Fns {
+    fn highlight(&self, language: &str, code: &str) -> Option<Vec<(Range<usize>, TokenKind)>> {
+        self.calls.fetch_add(1, Ordering::Relaxed);
+        (language == "test").then(|| {
+            code.match_indices("fn")
+                .map(|(i, m)| (i..i + m.len(), TokenKind::Keyword))
+                .collect()
+        })
+    }
+}
+
+struct Hl {
+    text: String,
+    language: &'static str,
+    highlighter: Option<Rc<Fns>>,
+    galley: Option<Arc<alumina_code::egui::Galley>>,
+}
+
+fn highlighted(text: &str, language: &'static str, with: bool) -> (Harness<'static, Hl>, Rc<Fns>) {
+    let fns = Rc::new(Fns::default());
+    let mut h = Harness::builder().with_size([400.0, 200.0]).build_ui_state(
+        |ui, s: &mut Hl| {
+            let mut editor = CodeEditor::new(&mut s.text)
+                .id(Id::unique(ID))
+                .language(s.language);
+            if let Some(f) = &s.highlighter {
+                editor = editor.highlighter(f.as_ref());
+            }
+            s.galley = Some(editor.show(ui).text_edit.galley);
+        },
+        Hl {
+            text: text.into(),
+            language,
+            highlighter: with.then(|| fns.clone()),
+            galley: None,
+        },
+    );
+    h.run();
+    (h, fns)
+}
+
+/// The colour of each section of the editor's galley.
+fn job_colors(h: &Harness<'_, Hl>) -> Vec<alumina_code::egui::Color32> {
+    let galley = h.state().galley.as_ref().expect("shown");
+    galley.job.sections.iter().map(|s| s.format.color).collect()
+}
+
+#[test]
+fn a_highlighter_colours_the_text() {
+    let (h, _) = highlighted("fn a", "test", true);
+    let colors = job_colors(&h);
+    let kw =
+        CodeTheme::from_visuals(&alumina_code::egui::Visuals::dark()).color(TokenKind::Keyword);
+    assert!(colors.contains(&kw), "{colors:?}");
+}
+
+#[test]
+fn an_unknown_language_is_plain() {
+    let (h, _) = highlighted("fn a", "other", true);
+    let (plain, _) = highlighted("fn a", "other", false);
+    assert_eq!(job_colors(&h), job_colors(&plain));
+}
+
+#[test]
+fn the_highlighter_runs_once_for_unchanged_text() {
+    let (mut h, fns) = highlighted("fn a", "test", true);
+    for _ in 0..10 {
+        h.run();
+    }
+    assert_eq!(fns.calls.load(Ordering::Relaxed), 1);
+    h.state_mut().text.push('b');
+    for _ in 0..3 {
+        h.run();
+    }
+    assert_eq!(fns.calls.load(Ordering::Relaxed), 2);
+}
+
+#[test]
+fn empty_text_keeps_its_row_height() {
+    let (h, _) = highlighted("", "test", true);
+    let (plain, _) = highlighted("", "test", false);
+    let height = |h: &Harness<'_, Hl>| h.state().galley.as_ref().unwrap().rect.height();
+    assert!(height(&h) > 0.0);
+    assert_eq!(height(&h), height(&plain));
 }

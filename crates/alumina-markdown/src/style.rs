@@ -2,6 +2,7 @@
 
 use std::hash::{Hash, Hasher};
 
+use alumina_code::CodeTheme;
 use egui::{Color32, FontFamily, FontId, Visuals};
 
 /// Fonts and colours for [`layout`](crate::layout).
@@ -30,6 +31,8 @@ pub struct MarkdownStyle {
     pub quote_color: Color32,
     /// The background of inline code and code blocks.
     pub code_background: Color32,
+    /// The colours of highlighted code: fenced code with a language, and front matter.
+    pub code_theme: CodeTheme,
 }
 
 impl MarkdownStyle {
@@ -45,6 +48,7 @@ impl MarkdownStyle {
             link_color: visuals.hyperlink_color,
             quote_color: visuals.weak_text_color(),
             code_background: visuals.code_bg_color,
+            code_theme: CodeTheme::from_visuals(visuals),
         }
     }
 }
@@ -75,5 +79,6 @@ impl Hash for MarkdownStyle {
         ] {
             color.hash(state);
         }
+        self.code_theme.hash(state);
     }
 }
