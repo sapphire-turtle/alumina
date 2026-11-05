@@ -32,8 +32,8 @@ fn editor(ui: &mut egui::Ui, source: &mut String, indent: Indent) {
 
 | Key | What it does |
 |---|---|
-| Enter | breaks the line and keeps its indentation; goes a level in after `{`, `[` or `(`; a closer right after the cursor moves to a line of its own |
-| Tab | indents: within a line, to the next stop; over a selection of several lines, each line a level in |
+| Enter | breaks the line and keeps its indentation; goes a level in after `{`, `[` or `(`; between a matching pair (`{|}`, `[|]`, `(|)`), the closer moves to a line of its own |
+| Tab | indents: within a line, to the next stop; over a selection of several lines, each line a level in, blank lines left alone |
 | Shift + Tab | outdents each line the selection touches by a level |
 | Backspace in the indentation | steps back to the previous multiple of the unit, not one space (not for `Tab`) |
 | `}`, `]` or `)` on a blank, indented line | comes out a level as it is typed |

@@ -100,16 +100,40 @@ fn forget_composing(ctx: &Context, id: Id) {
     ctx.data_mut(|d| d.remove::<bool>(composing_id(id)));
 }
 
-/// Whether `event`, left for egui, edits the text or moves the cursor.
+/// Whether `event`, left for egui, edits the text or moves the cursor. A pressed key counts
+/// only if the `TextEdit` acts on it: the arrows, Home, End, paging, deleting, Enter, Tab,
+/// and the shortcuts. A char key is not an edit: its `Text` event is (egui-winit sends the
+/// key before the text, the web the text before the key).
 fn egui_edits(event: &Event) -> bool {
-    matches!(
-        event,
-        Event::Text(_)
-            | Event::Paste(_)
-            | Event::Cut
-            | Event::Ime(_)
-            | Event::Key { pressed: true, .. }
-    )
+    match event {
+        Event::Text(_) | Event::Paste(_) | Event::Cut | Event::Ime(_) => true,
+        Event::Key {
+            key,
+            pressed: true,
+            modifiers,
+            ..
+        } => {
+            modifiers.ctrl
+                || modifiers.command
+                || modifiers.mac_cmd
+                || matches!(
+                    key,
+                    Key::ArrowUp
+                        | Key::ArrowDown
+                        | Key::ArrowLeft
+                        | Key::ArrowRight
+                        | Key::Home
+                        | Key::End
+                        | Key::PageUp
+                        | Key::PageDown
+                        | Key::Backspace
+                        | Key::Delete
+                        | Key::Enter
+                        | Key::Tab
+                )
+        }
+        _ => false,
+    }
 }
 
 /// Take the keys the focused, editable editor `id` handles out of this frame's input, and
@@ -117,7 +141,7 @@ fn egui_edits(event: &Event) -> bool {
 ///
 /// The edits come before egui's, so the editor takes presses only up to the first event of
 /// the frame that it leaves for egui and that edits the text or moves the cursor (a `Text`,
-/// `Paste`, `Cut`, `Ime` event, or a pressed key it does not take, including a Backspace or
+/// `Paste`, `Cut`, `Ime` event, or a pressed key it does not take that egui acts on, including a Backspace or
 /// closer whose edit is `None`). From that event on it takes nothing more this frame: the
 /// later presses reach egui as they are, so that the text comes out in the order typed.
 fn take_keys(ui: &Ui, id: Id, text: &mut String, unit: Indent) -> bool {

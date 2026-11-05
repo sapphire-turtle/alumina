@@ -204,16 +204,62 @@ fn ime_keeps_enter_and_closers() {
     ]);
     h.run();
     assert_eq!(h.state().text, "{か}");
+}
 
-    let mut h = with("    ");
-    set_cursor(&mut h, 4);
+/// An Enter before the IME's events in the frame is egui's as well.
+#[test]
+fn enter_in_a_frame_with_ime_is_egui_s() {
+    let mut h = with("{}");
+    set_cursor(&mut h, 1);
+    h.input_mut().events.extend([enter_key(), preedit("か")]);
+    h.run();
+    assert_eq!(h.state().text, "{\nか}");
+}
+
+fn key_event(key: Key, modifiers: Modifiers) -> Event {
+    Event::Key {
+        key,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers,
+    }
+}
+
+#[test]
+fn a_closer_comes_out_in_winit_s_and_the_web_s_order() {
+    let k = key_event(Key::CloseCurlyBracket, Modifiers::SHIFT);
+    for events in [
+        vec![k.clone(), Event::Text("}".into())],
+        vec![Event::Text("}".into()), k],
+    ] {
+        let mut h = with("{\n        ");
+        set_cursor(&mut h, 10);
+        h.input_mut().events.extend(events);
+        h.run();
+        assert_eq!(h.state().text, "{\n    }");
+    }
+}
+
+#[test]
+fn a_char_key_before_its_text_keeps_the_order() {
+    let mut h = with("{}");
+    set_cursor(&mut h, 1);
     h.input_mut().events.extend([
-        preedit("x"),
-        Event::Ime(ImeEvent::Commit("x".into())),
-        Event::Text(")".into()),
+        key_event(Key::A, Modifiers::NONE),
+        Event::Text("a".into()),
+        enter_key(),
     ]);
     h.run();
-    assert_eq!(h.state().text, "    x)");
+    assert_eq!(h.state().text, "{a\n}");
+}
+
+#[test]
+fn enter_at_the_end_of_a_crlf_line() {
+    let mut h = with("a {\r\n}");
+    set_cursor(&mut h, 4);
+    key(&mut h, Key::Enter, Modifiers::NONE);
+    assert_eq!(h.state().text, "a {\r\n    \r\n}");
 }
 
 #[test]

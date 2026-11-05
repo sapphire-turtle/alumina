@@ -62,7 +62,7 @@ pub struct Edit {
 impl Edit {
     /// Apply the replacement to `text`.
     ///
-    /// `text` must be the source the edit was made from (by [`newline`] or [`close`]): on
+    /// `text` must be the source the edit was made from (by one of this crate's edit functions): on
     /// any other text the range may be out of bounds or off a char boundary, and this
     /// panics.
     pub fn apply(&self, text: &mut String) {
@@ -360,7 +360,8 @@ pub fn backspace(source: &str, selection: Range<usize>, indent: Indent) -> Optio
     })
 }
 
-/// Sort, clamp to the text and move onto char boundaries (outwards).
+/// Sort, clamp to the text, move onto char boundaries (outwards) and out from between the
+/// `\r` and `\n` of a CRLF break (egui puts the cursor there at the end of a line).
 fn clamp(source: &str, sel: Range<usize>) -> Range<usize> {
     let (a, b) = if sel.start <= sel.end {
         (sel.start, sel.end)
@@ -375,12 +376,23 @@ fn clamp(source: &str, sel: Range<usize>) -> Range<usize> {
     }
     if point {
         // A point stays a point.
+        let a = out_of_crlf(source, a);
         return a..a;
     }
     while !source.is_char_boundary(b) {
         b += 1;
     }
-    a..b
+    out_of_crlf(source, a)..out_of_crlf(source, b)
+}
+
+/// `p`, or the start of the CRLF break it is inside.
+fn out_of_crlf(source: &str, p: usize) -> usize {
+    let bytes = source.as_bytes();
+    if p > 0 && bytes.get(p - 1) == Some(&b'\r') && bytes.get(p) == Some(&b'\n') {
+        p - 1
+    } else {
+        p
+    }
 }
 
 #[cfg(test)]
@@ -434,6 +446,16 @@ mod tests {
         let s = "  日本 {"; // 10 bytes
         assert_eq!(newline(s, 10..10, S4), ed(10..10, "\n      ", 17..17));
     }
+    #[test]
+    fn a_cursor_inside_a_crlf_break_is_before_it() {
+        assert_eq!(newline("a {\r\n}", 4..4, S4), newline("a {\r\n}", 3..3, S4));
+        assert_eq!(newline("a {\r\n}", 4..4, S4), ed(3..3, "\r\n    ", 9..9));
+        assert_eq!(
+            close("{\r\n    \r\n", 7..7, '}', S4),
+            Some(ed(3..7, "}", 4..4))
+        );
+    }
+
     #[test]
     fn enter_matches_crlf() {
         assert_eq!(newline("x\r\n  y", 6..6, S4), ed(6..6, "\r\n  ", 10..10));
