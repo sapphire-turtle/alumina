@@ -19,12 +19,14 @@
 pub mod calc;
 mod calendar;
 mod drum;
+mod icons;
 mod labels;
 mod period;
 mod picker;
 
 pub use calendar::{Calendar, CalendarResponse, CalendarState, CalendarView, DayBadge};
 pub use drum::{Drum, TimeDrum};
+pub use icons::CalendarIcons;
 pub use labels::{CalendarConfig, Labels};
 pub use period::{ParsePeriodError, Period, PeriodKind};
 pub use picker::{

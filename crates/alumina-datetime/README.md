@@ -34,6 +34,23 @@ day of the week and the other shared settings in a `CalendarConfig`: hand it you
 translation. The colours are egui's `Visuals` (`selection.bg_fill` for what is picked, and
 so on), so your theme applies; change them for one widget with `ui.scope`.
 
+## Icons
+
+The previous and next buttons are arrows drawn with lines, and Today, Clear and Now show
+their `Labels` words. To use your app's icons instead, pass a `CalendarIcons` with
+`CalendarConfig::icons`; the `Labels` word then names the button for screen readers and is
+its hover text. alumina ships no icons and no image loader: install one on the `Context`
+(`egui_extras::install_image_loaders` for SVG).
+
+```rust
+use alumina_datetime::{CalendarConfig, CalendarIcons};
+
+let mut icons = CalendarIcons::default();
+icons.previous = Some(egui::include_image!("icons/chevron-left.svg"));
+icons.next = Some(egui::include_image!("icons/chevron-right.svg"));
+let config = CalendarConfig::default().icons(icons);
+```
+
 ## Timestamps
 
 Timestamps are `chrono::NaiveDateTime`, wall time: convert to and from a time zone in your

@@ -76,28 +76,28 @@ use alumina_datetime::chrono::Timelike as _;
 
 /// The words in Japanese, as an app would hand over its translation.
 fn japanese() -> Labels {
-    Labels {
-        months: std::array::from_fn(|i| format!("{}月", i + 1)),
-        months_short: std::array::from_fn(|i| format!("{}月", i + 1)),
-        weekdays_short: ["月", "火", "水", "木", "金", "土", "日"].map(String::from),
-        week_column: "週".into(),
-        day: "日".into(),
-        week: "週".into(),
-        month: "月".into(),
-        year: "年".into(),
-        range: "期間".into(),
-        today: "今日".into(),
-        now: "現在".into(),
-        clear: "クリア".into(),
-        previous: "前へ".into(),
-        next: "次へ".into(),
-        choose_month: "月を選ぶ".into(),
-        choose_year: "年を選ぶ".into(),
-        am: "午前".into(),
-        pm: "午後".into(),
-        none: "未設定".into(),
-        period_hint: "2026-11-03、2026-W45、2026-11、2026 …".into(),
-    }
+    let mut l = Labels::default();
+    l.months = std::array::from_fn(|i| format!("{}月", i + 1));
+    l.months_short = std::array::from_fn(|i| format!("{}月", i + 1));
+    l.weekdays_short = ["月", "火", "水", "木", "金", "土", "日"].map(String::from);
+    l.week_column = "週".into();
+    l.day = "日".into();
+    l.week = "週".into();
+    l.month = "月".into();
+    l.year = "年".into();
+    l.range = "期間".into();
+    l.today = "今日".into();
+    l.now = "現在".into();
+    l.clear = "クリア".into();
+    l.previous = "前へ".into();
+    l.next = "次へ".into();
+    l.choose_month = "月を選ぶ".into();
+    l.choose_year = "年を選ぶ".into();
+    l.am = "午前".into();
+    l.pm = "午後".into();
+    l.none = "未設定".into();
+    l.period_hint = "2026-11-03、2026-W45、2026-11、2026 …".into();
+    l
 }
 
 /// A made-up count of entries on a day, for the badges.

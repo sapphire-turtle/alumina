@@ -3,6 +3,7 @@
 use chrono::{NaiveDate, NaiveDateTime, NaiveTime, Timelike as _};
 use egui::{Id, IdSalt, Popup, PopupCloseBehavior, Response, Ui, Widget};
 
+use crate::icons::small_button;
 use crate::{Calendar, CalendarConfig, CalendarState, DayBadge, Period, PeriodKind, TimeDrum};
 
 const DAY_FMT: &str = "%Y-%m-%d";
@@ -430,7 +431,7 @@ impl Widget for TimePickerButton<'_> {
             changed |= ui
                 .add(format.drum(id.with("drum"), time, &config))
                 .changed();
-            if ui.small_button(&config.labels.now).clicked() {
+            if small_button(ui, &config.labels.now, &config.icons.now).clicked() {
                 let now = chrono::Local::now().time();
                 *time = now.with_nanosecond(0).unwrap_or(now);
                 changed = true;
@@ -605,7 +606,7 @@ impl Widget for DateTimePickerButton<'_> {
                         .config(config.clone()),
                 )
                 .changed();
-            if ui.small_button(&config.labels.now).clicked() {
+            if small_button(ui, &config.labels.now, &config.icons.now).clicked() {
                 let now = chrono::Local::now().naive_local();
                 *datetime = now.with_nanosecond(0).unwrap_or(now);
                 state.cursor = datetime.date();
