@@ -8,6 +8,7 @@ any egui app can use them. They depend on egui, not on corundum or a window.
 
 | Crate | What it is | Status |
 |---|---|---|
+| [`alumina-code`](crates/alumina-code) | A code editor that keeps the indentation: Enter, brackets, Tab and Shift+Tab over lines | 0.1 |
 | [`alumina-datetime`](crates/alumina-datetime) | A calendar (a day, a week, a month, a year or a range), time drums, a timestamp picker, and buttons that open them in a popup | 0.1 |
 | [`alumina-markdown`](crates/alumina-markdown) | A Markdown editor that formats as you type, with shortcuts, a toolbar and list completion | 0.1 |
 | [`alumina-demo`](demo) | An app to try them all, on the desktops, iOS and Android | not released |

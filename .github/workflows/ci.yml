@@ -11,10 +11,12 @@ jobs:
       linux-packages: libwayland-dev libxkbcommon-dev
       post-test: |
         # The libraries publish on their own, as crates.io builds them (the crates with
-        # `publish = false`, the demo and the unreleased markdown editor, are skipped).
+        # `publish = false`, only the demo, is skipped).
         cargo publish --workspace --dry-run --locked
         # The demo's binary links on each desktop (the tests link only its lib).
         cargo build -p alumina-demo --bin alumina-demo --locked
+        # The shared workflow tests without features: alumina-code's `serde` is tested here.
+        cargo test -p alumina-code --features serde --locked
 
   # The widget crates are for any egui app, with or without a window: none of them may
   # bring eframe or corundum (only the demo does).
@@ -25,7 +27,7 @@ jobs:
       - uses: actions/checkout@v7
       - name: eframe and corundum are not built for the libraries
         run: |
-          for p in alumina-datetime alumina-markdown; do
+          for p in alumina-code alumina-datetime alumina-markdown; do
             # Each tree goes to a file first, so a failing cargo fails the job rather than
             # passing as an empty tree.
             cargo tree --locked --target all -p "$p" -e normal > tree.txt

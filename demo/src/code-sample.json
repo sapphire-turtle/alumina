@@ -1,0 +1,14 @@
+{
+  "name": "alumina",
+  "version": "0.1.0",
+  "features": {
+    "serde": true,
+    "highlighting": false
+  },
+  "keywords": ["egui", "code", "editor"],
+  "authors": [
+    {
+      "name": "sapphire-turtle"
+    }
+  ]
+}

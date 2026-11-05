@@ -21,6 +21,7 @@ name = "alumina-demo"
 path = "src/main.rs"
 
 [dependencies]
+alumina-code = { workspace = true }
 alumina-datetime = { workspace = true }
 alumina-markdown = { workspace = true }
 # `LauncherSpec`, which gives the window its icon (and the app its entry in the app menu);

@@ -3,6 +3,7 @@
 //! [`Demo`] is the app; [`run`] opens it in a desktop window (and on iOS, where
 //! `alumina_demo_main` calls it), and `android_main` on an Android phone.
 
+mod code;
 mod datetime;
 mod markdown;
 
@@ -15,6 +16,7 @@ pub const NARROW: f32 = 600.0;
 enum Page {
     DateTime,
     Markdown,
+    Code,
 }
 
 /// The demo: a page per crate.
@@ -22,6 +24,7 @@ pub struct Demo {
     page: Page,
     datetime: datetime::DateTimeDemo,
     markdown: markdown::MarkdownDemo,
+    code: code::CodeDemo,
 }
 
 impl Default for Demo {
@@ -30,6 +33,7 @@ impl Default for Demo {
             page: Page::DateTime,
             datetime: datetime::DateTimeDemo::default(),
             markdown: markdown::MarkdownDemo::default(),
+            code: code::CodeDemo::default(),
         }
     }
 }
@@ -52,6 +56,7 @@ impl Demo {
             ui.horizontal(|ui| {
                 ui.selectable_value(&mut self.page, Page::DateTime, "Date & time");
                 ui.selectable_value(&mut self.page, Page::Markdown, "Markdown");
+                ui.selectable_value(&mut self.page, Page::Code, "Code");
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     egui::widgets::global_theme_preference_buttons(ui);
                 });
@@ -60,6 +65,7 @@ impl Demo {
         egui::CentralPanel::default().show(ui, |ui| match self.page {
             Page::DateTime => self.datetime.ui(ui),
             Page::Markdown => self.markdown.ui(ui),
+            Page::Code => self.code.ui(ui),
         });
     }
 }

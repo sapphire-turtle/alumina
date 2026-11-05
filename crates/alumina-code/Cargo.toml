@@ -5,6 +5,7 @@ description = "A code editor for egui that keeps the indentation"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+readme = "README.md"
 keywords = ["egui", "code", "editor", "text-editor", "gui"]
 categories = ["gui", "text-editors"]
 

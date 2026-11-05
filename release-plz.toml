@@ -17,5 +17,12 @@ pr_labels = ["release"]
 name = "alumina-datetime"
 changelog_path = "crates/alumina-datetime/CHANGELOG.md"
 
-# alumina-markdown is not released until its editor is (#1): `publish = false` in its
-# Cargo.toml keeps release-plz off it. The demo app is never released, for the same flag.
+[[package]]
+name = "alumina-code"
+changelog_path = "crates/alumina-code/CHANGELOG.md"
+
+[[package]]
+name = "alumina-markdown"
+changelog_path = "crates/alumina-markdown/CHANGELOG.md"
+
+# The demo app is never released: `publish = false` in its Cargo.toml keeps release-plz off it.
