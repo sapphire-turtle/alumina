@@ -216,13 +216,14 @@ fn touched_lines(source: &str, sel: &Range<usize>) -> Vec<Line> {
     lines
 }
 
-/// Tab with `selection` selected: over one line, the spaces (or tab) up to the next stop
-/// replace the selection; over two lines or more, each line that is not blank goes a level
-/// in. `None` when there is nothing to indent.
+/// Tab with `selection` selected: within one line, the spaces (or tab) up to the next stop
+/// replace the selection; when the selection contains a line break, each line it touches
+/// that is not blank goes a level in, even if it touches only one. `None` when there is
+/// nothing to indent.
 pub fn indent(source: &str, selection: Range<usize>, indent: Indent) -> Option<Edit> {
     let sel = clamp(source, selection);
     let lines = touched_lines(source, &sel);
-    if lines.len() == 1 {
+    if lines.len() == 1 && !source[sel.clone()].contains('\n') {
         let before = &source[lines[0].start..sel.start];
         let column: usize = before
             .chars()
@@ -505,6 +506,11 @@ mod tests {
         );
     }
     #[test]
+    fn tab_over_a_whole_line_selection_indents_it() {
+        assert_eq!(indent("a\n", 0..2, S4), Some(ed(0..1, "    a", 0..6)));
+        assert_eq!(indent("a\nb", 1..2, S4), Some(ed(0..1, "    a", 5..6)));
+    }
+    #[test]
     fn tab_over_blank_lines_only_does_nothing() {
         assert_eq!(indent("\n\n", 0..2, S4), None);
     }
@@ -526,6 +532,7 @@ mod tests {
             Some(ed(0..4, "", 3..3))
         );
         assert_eq!(outdent("    a", 2..2, S4), Some(ed(0..4, "", 0..0))); // inside the indent
+        assert_eq!(outdent("    a\n", 0..6, S4), Some(ed(0..4, "", 0..2)));
         assert_eq!(
             outdent("    a\n  b\nc", 0..11, S4),
             Some(ed(0..11, "a\nb\nc", 0..5))
