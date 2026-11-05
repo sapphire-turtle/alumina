@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **breaking** *(alumina-datetime)* `Labels`, `CalendarConfig` and the new `CalendarIcons` are `#[non_exhaustive]` (build them from `default()` and set fields)
+
 ### Added
 
 - *(alumina-datetime)* CalendarIcons: the app's icons for the calendar's buttons ([#13](https://github.com/sapphire-turtle/alumina/issues/13))

@@ -11,6 +11,7 @@ use egui::{Button, Image, ImageSource, Response, Role, Ui, WidgetInfo};
 /// the loader they need (an SVG one for Lucide) on the `Context`. Pass them with
 /// [`CalendarConfig::icons`](crate::CalendarConfig::icons).
 #[derive(Clone, Debug, Default)]
+#[non_exhaustive]
 pub struct CalendarIcons {
     /// Previous month / year / decade (`Labels::previous`).
     pub previous: Option<ImageSource<'static>>,
@@ -34,11 +35,12 @@ pub(crate) fn small_button(
     let Some(source) = icon else {
         return ui.small_button(label);
     };
-    let size = ui.spacing().interact_size.y - 2.0 * ui.spacing().button_padding.y;
+    // As tall as the text a small button would hold, so the row keeps its height.
+    let size = ui.text_style_height(&egui::TextStyle::Button);
     let image = Image::new(source.clone())
         .fit_to_exact_size(egui::vec2(size, size))
         .tint(ui.visuals().text_color());
-    let response = ui.add(Button::image(image)).on_hover_text(label);
+    let response = ui.add(Button::image(image).small()).on_hover_text(label);
     response.widget_info(|| WidgetInfo::labeled(Role::Button, ui.is_enabled(), label));
     response
 }

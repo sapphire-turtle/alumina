@@ -6,7 +6,8 @@
 use alumina_datetime::chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 use alumina_datetime::{
     Calendar, CalendarConfig, CalendarIcons, CalendarState, CalendarView, DatePickerButton,
-    DateTimePicker, Drum, Period, PeriodKind, PeriodPickerButton, TimeDrum,
+    DateTimePicker, DateTimePickerButton, Drum, Period, PeriodKind, PeriodPickerButton, TimeDrum,
+    TimePickerButton,
 };
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable as _;
@@ -260,6 +261,8 @@ fn datetime_picker_stacks_on_a_narrow_screen() {
 
 const SVG: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><path d="M3 2h6a3 3 0 0 1 0 6H3z" fill="none" stroke="currentColor"/></svg>"#;
 
+type Seen = std::sync::Arc<std::sync::Mutex<Option<std::sync::Arc<Recorder>>>>;
+
 fn icon(name: &str) -> Option<egui::ImageSource<'static>> {
     Some(egui::ImageSource::Bytes {
         uri: format!("bytes://{name}.svg").into(),
@@ -267,21 +270,83 @@ fn icon(name: &str) -> Option<egui::ImageSource<'static>> {
     })
 }
 
-fn with_icons() -> Harness<'static, Cal> {
+/// Every icon but `next`, whose chevron stays drawn.
+fn all_icons() -> CalendarIcons {
+    let mut icons = CalendarIcons::default();
+    icons.previous = icon("previous");
+    icons.today = icon("today");
+    icons.clear = icon("clear");
+    icons.now = icon("now");
+    icons
+}
+
+/// An image loader that records the URIs it is asked for and loads nothing.
+#[derive(Default)]
+struct Recorder(std::sync::Mutex<Vec<String>>);
+
+impl egui::load::ImageLoader for Recorder {
+    fn id(&self) -> &str {
+        "recorder"
+    }
+    fn load(
+        &self,
+        _: &egui::Context,
+        uri: &str,
+        _: egui::load::SizeHint,
+    ) -> egui::load::ImageLoadResult {
+        let mut seen = self.0.lock().unwrap();
+        if !seen.iter().any(|u| u == uri) {
+            seen.push(uri.to_owned());
+        }
+        Err(egui::load::LoadError::NotSupported)
+    }
+    fn forget(&self, _: &str) {}
+    fn forget_all(&self) {}
+    fn byte_size(&self) -> usize {
+        0
+    }
+}
+
+/// Installs the recorder (once) in front of the SVG loader.
+fn record(seen: &Seen, ctx: &egui::Context) {
+    seen.lock().unwrap().get_or_insert_with(|| {
+        let r = std::sync::Arc::new(Recorder::default());
+        // The most recently added loader is asked first.
+        egui_extras::install_image_loaders(ctx);
+        ctx.add_image_loader(r.clone());
+        r
+    });
+}
+
+fn requested(seen: &Seen) -> Vec<String> {
+    let mut v = seen
+        .lock()
+        .unwrap()
+        .as_ref()
+        .unwrap()
+        .0
+        .lock()
+        .unwrap()
+        .clone();
+    v.sort();
+    v
+}
+
+fn uris(names: &[&str]) -> Vec<String> {
+    names.iter().map(|n| format!("bytes://{n}.svg")).collect()
+}
+
+fn with_icons(icons: CalendarIcons) -> (Harness<'static, Cal>, Seen) {
     let state = Cal {
         state: CalendarState::for_period(None, &[PeriodKind::Day], d(2026, 11, 3)),
         kinds: vec![PeriodKind::Day],
         value: None,
     };
-    let icons = CalendarIcons {
-        previous: icon("previous"),
-        today: icon("today"),
-        clear: icon("clear"),
-        ..CalendarIcons::default()
-    };
-    Harness::builder().with_size([320.0, 330.0]).build_ui_state(
+    let seen = Seen::default();
+    let seen2 = seen.clone();
+    let h = Harness::builder().with_size([320.0, 330.0]).build_ui_state(
         move |ui, s: &mut Cal| {
-            egui_extras::install_image_loaders(ui.ctx());
+            record(&seen2, ui.ctx());
             let r = Calendar::new("cal", &mut s.state)
                 .kinds(&s.kinds)
                 .selection(s.value)
@@ -296,12 +361,14 @@ fn with_icons() -> Harness<'static, Cal> {
             }
         },
         state,
-    )
+    );
+    (h, seen)
 }
 
 #[test]
-fn without_icons_the_buttons_are_the_arrows_and_the_words() {
-    let mut h = calendar(&[PeriodKind::Day]);
+fn without_icons_no_image_is_requested_and_the_buttons_work() {
+    let (mut h, seen) = with_icons(CalendarIcons::default());
+    h.run();
     h.get_by_label("Previous").click();
     h.run();
     assert_eq!(h.state().state.cursor, d(2026, 10, 3));
@@ -311,12 +378,15 @@ fn without_icons_the_buttons_are_the_arrows_and_the_words() {
     h.get_by_label("Clear").click();
     h.run();
     assert_eq!(h.state().value, None);
+    assert!(requested(&seen).is_empty());
 }
 
 #[test]
-fn icon_buttons_are_found_by_their_labels_and_act_as_the_text_ones() {
-    let mut h = with_icons();
+fn icon_buttons_load_their_images_and_act_as_the_text_ones() {
+    let (mut h, seen) = with_icons(all_icons());
     h.run();
+    // Previous, Today and Clear; not Now (not in a calendar) and not Next (no icon).
+    assert_eq!(requested(&seen), uris(&["clear", "previous", "today"]));
     h.get_by_label("Previous").click();
     h.run();
     assert_eq!(h.state().state.cursor, d(2026, 10, 3));
@@ -335,7 +405,7 @@ fn icon_buttons_are_found_by_their_labels_and_act_as_the_text_ones() {
 
 #[test]
 fn icon_buttons_show_their_label_as_hover_text() {
-    let mut h = with_icons();
+    let (mut h, _) = with_icons(all_icons());
     h.run();
     h.get_by_label("Today").hover();
     for _ in 0..10 {
@@ -343,4 +413,61 @@ fn icon_buttons_show_their_label_as_hover_text() {
     }
     // The button, and its tooltip.
     assert_eq!(h.get_all_by_label("Today").count(), 2);
+}
+
+/// The Now button of a time picker's popup: what images were loaded, and how tall it is.
+fn now_button(icons: CalendarIcons, datetime: bool) -> (Vec<String>, f32) {
+    let seen = Seen::default();
+    let seen2 = seen.clone();
+    let mut h = Harness::builder()
+        .with_size([420.0, 520.0])
+        .build_ui(move |ui| {
+            record(&seen2, ui.ctx());
+            let config = config().icons(icons.clone());
+            if datetime {
+                let mut v = d(2026, 11, 3).and_hms_opt(9, 30, 0).unwrap();
+                ui.add(DateTimePickerButton::new("dt", &mut v).config(config));
+            } else {
+                let mut v = NaiveTime::from_hms_opt(9, 30, 0).unwrap();
+                ui.add(TimePickerButton::new("t", &mut v).config(config));
+            }
+        });
+    h.run();
+    h.get_by_label(if datetime {
+        "2026-11-03 09:30"
+    } else {
+        "09:30"
+    })
+    .click();
+    h.run();
+    h.run();
+    let height = h.get_by_label("Now").rect().height();
+    (requested(&seen), height)
+}
+
+#[test]
+fn the_now_icon_loads_and_keeps_the_buttons_height() {
+    for datetime in [false, true] {
+        let (none, plain) = now_button(CalendarIcons::default(), datetime);
+        assert!(none.is_empty());
+        let (loaded, with_icon) = now_button(all_icons(), datetime);
+        assert!(loaded.contains(&"bytes://now.svg".to_owned()), "{loaded:?}");
+        assert!(
+            (with_icon - plain).abs() < 0.5,
+            "{with_icon} against {plain} (datetime: {datetime})"
+        );
+    }
+}
+
+#[test]
+fn the_today_and_clear_icons_keep_the_buttons_height() {
+    let (mut plain, _) = with_icons(CalendarIcons::default());
+    plain.run();
+    let (mut iconed, _) = with_icons(all_icons());
+    iconed.run();
+    for name in ["Today", "Clear"] {
+        let a = plain.get_by_label(name).rect().height();
+        let b = iconed.get_by_label(name).rect().height();
+        assert!((a - b).abs() < 0.5, "{name}: {b} against {a}");
+    }
 }

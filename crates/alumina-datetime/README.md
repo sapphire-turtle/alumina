@@ -45,11 +45,9 @@ its hover text. alumina ships no icons and no image loader: install one on the `
 ```rust
 use alumina_datetime::{CalendarConfig, CalendarIcons};
 
-let icons = CalendarIcons {
-    previous: Some(egui::include_image!("icons/chevron-left.svg")),
-    next: Some(egui::include_image!("icons/chevron-right.svg")),
-    ..CalendarIcons::default()
-};
+let mut icons = CalendarIcons::default();
+icons.previous = Some(egui::include_image!("icons/chevron-left.svg"));
+icons.next = Some(egui::include_image!("icons/chevron-right.svg"));
 let config = CalendarConfig::default().icons(icons);
 ```
 

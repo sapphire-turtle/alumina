@@ -9,6 +9,7 @@ use crate::{CalendarIcons, PeriodKind};
 /// Every word the widgets show. [`Labels::default`] is English; an app passes its own
 /// translation (corundum's Fluent strings, say) through [`CalendarConfig::labels`].
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct Labels {
     /// January to December, as a heading reads them.
     pub months: [String; 12],
@@ -112,6 +113,7 @@ static ENGLISH: LazyLock<Arc<Labels>> = LazyLock::new(|| Arc::new(Labels::defaul
 
 /// What every calendar shares: the words, the first day of the week, today.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct CalendarConfig {
     pub labels: Arc<Labels>,
     /// The app's icons for the buttons; none by default (arrows drawn, words for the rest).
