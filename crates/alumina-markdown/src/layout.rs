@@ -1,5 +1,6 @@
 //! [`Doc`] and [`MarkdownStyle`] to a [`LayoutJob`].
 
+use alumina_code::Highlighter;
 use egui::text::{LayoutJob, TextFormat};
 use egui::{Color32, FontId, Stroke};
 
@@ -23,6 +24,28 @@ struct Fmt {
 /// The formats come from the blocks (outer to inner), then the inlines, then the marks,
 /// which only change the colour. Every byte is in exactly one section.
 pub fn layout(source: &str, doc: &Doc, style: &MarkdownStyle, wrap_width: f32) -> LayoutJob {
+    layout_highlighted(source, doc, style, wrap_width, None)
+}
+
+/// The language of a block's code, if it is highlighted: the first word of a fence's info,
+/// `yaml` for front matter.
+fn language(kind: &BlockKind) -> Option<&str> {
+    match kind {
+        BlockKind::CodeBlock { info: Some(info) } => info.split_whitespace().next(),
+        BlockKind::FrontMatter => Some("yaml"),
+        _ => None,
+    }
+}
+
+/// [`layout`], with the code of fenced blocks that name a language and of front matter
+/// coloured by `highlighter`.
+pub(crate) fn layout_highlighted(
+    source: &str,
+    doc: &Doc,
+    style: &MarkdownStyle,
+    wrap_width: f32,
+    highlighter: Option<&dyn Highlighter>,
+) -> LayoutJob {
     let mut fmts = vec![
         Fmt {
             size: style.body.size,
@@ -53,7 +76,7 @@ pub fn layout(source: &str, doc: &Doc, style: &MarkdownStyle, wrap_width: f32) -
                 });
             }
             BlockKind::Quote { .. } => paint(&block.range, &|f| f.color = style.quote_color),
-            BlockKind::CodeBlock { .. } => paint(&block.range, &|f| {
+            BlockKind::CodeBlock { .. } | BlockKind::FrontMatter => paint(&block.range, &|f| {
                 f.mono = true;
                 f.size = style.monospace.size;
                 f.background = style.code_background;
@@ -75,6 +98,35 @@ pub fn layout(source: &str, doc: &Doc, style: &MarkdownStyle, wrap_width: f32) -
                 f.color = style.link_color;
                 f.underline = true;
             }),
+        }
+    }
+    if let Some(highlighter) = highlighter {
+        for block in &doc.blocks {
+            let Some(language) = language(&block.kind) else {
+                continue;
+            };
+            let code: String = block.content.iter().map(|r| &source[r.clone()]).collect();
+            let Some(tokens) = highlighter.highlight(language, &code) else {
+                continue;
+            };
+            for (range, kind) in tokens {
+                let (start, end) = (range.start.min(code.len()), range.end.min(code.len()));
+                if start >= end || !code.is_char_boundary(start) || !code.is_char_boundary(end) {
+                    continue;
+                }
+                let color = style.code_theme.color(kind);
+                // The joined range back to the source: split where it crosses pieces.
+                let mut at = 0;
+                for piece in &block.content {
+                    let piece_end = at + piece.len();
+                    let (from, to) = (start.max(at), end.min(piece_end));
+                    if from < to {
+                        let base = piece.start - at;
+                        paint(&(base + from..base + to), &|f| f.color = color);
+                    }
+                    at = piece_end;
+                }
+            }
         }
     }
     let marks = doc
@@ -207,6 +259,16 @@ mod tests {
         assert_eq!(at(&j, 5).color, s.text_color);
         let j = job("> ```\n> x\n> ```\n");
         assert_eq!(at(&j, 8).font_id, s.monospace);
+    }
+
+    #[test]
+    fn front_matter_looks_like_code() {
+        let s = style();
+        let j = job("---\ntitle: a\n---\n");
+        assert_eq!(at(&j, 6).font_id, s.monospace);
+        assert_eq!(at(&j, 6).background, s.code_background);
+        assert_eq!(at(&j, 0).color, s.mark_color);
+        assert_eq!(at(&j, 6).color, s.text_color);
     }
 
     #[test]

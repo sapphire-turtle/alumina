@@ -197,6 +197,7 @@ dependencies = [
 name = "alumina-markdown"
 version = "0.1.0"
 dependencies = [
+ "alumina-code",
  "egui",
  "egui_extras",
  "egui_kittest",

@@ -1,8 +1,10 @@
 //! [`MarkdownEditor`]: a `TextEdit` whose layouter lays the text out as Markdown, and which
 //! takes the shortcut keys, Enter and Tab for the [`commands`](crate::commands).
 
+use std::hash::{Hash as _, Hasher as _};
 use std::ops::Range;
 
+use alumina_code::Highlighter;
 use egui::cache::{ComputerMut, FrameCache};
 use egui::text::{CCursor, CCursorRange, LayoutJob};
 use egui::text_edit::{TextEditOutput, TextEditState};
@@ -11,7 +13,7 @@ use egui::{
 };
 
 use crate::commands::{Command, Edit, command, indent, newline};
-use crate::layout::layout;
+use crate::layout::layout_highlighted;
 use crate::parse::{BlockKind, InlineKind, parse};
 use crate::style::MarkdownStyle;
 
@@ -245,6 +247,18 @@ struct Rendered {
 
 impl<'a> ComputerMut<(&'a str, &'a MarkdownStyle, u32), Rendered> for JobComputer {
     fn compute(&mut self, (text, style, width): (&'a str, &'a MarkdownStyle, u32)) -> Rendered {
+        render(text, style, f32::from_bits(width), None)
+    }
+}
+
+/// Parses and lays out `text`, with its code coloured by `highlighter` if there is one.
+fn render(
+    text: &str,
+    style: &MarkdownStyle,
+    width: f32,
+    highlighter: Option<&dyn Highlighter>,
+) -> Rendered {
+    {
         let doc = parse(text);
         let starts: Vec<usize> = doc
             .blocks
@@ -264,7 +278,7 @@ impl<'a> ComputerMut<(&'a str, &'a MarkdownStyle, u32), Rendered> for JobCompute
         let links = links_to_chars(text, links);
         Rendered {
             links,
-            job: layout(text, &doc, style, f32::from_bits(width)),
+            job: layout_highlighted(text, &doc, style, width, highlighter),
             rules,
         }
     }
@@ -272,15 +286,53 @@ impl<'a> ComputerMut<(&'a str, &'a MarkdownStyle, u32), Rendered> for JobCompute
 
 type JobCache = FrameCache<Rendered, JobComputer>;
 
+/// The rendering of `text` with a highlighter, kept in `ui.data` under `id` until its key
+/// (the text, style and width) changes, so that the highlighter runs once per change.
+fn highlighted(
+    ui: &Ui,
+    id: Id,
+    text: &str,
+    style: &MarkdownStyle,
+    wrap_width: f32,
+    highlighter: &dyn Highlighter,
+) -> Rendered {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    (text, style, wrap_width.to_bits()).hash(&mut hasher);
+    let key = hasher.finish();
+    let slot = id.with("highlight");
+    if let Some((k, rendered)) = ui.data(|d| d.get_temp::<(u64, Rendered)>(slot))
+        && k == key
+    {
+        return rendered;
+    }
+    let rendered = render(text, style, wrap_width, Some(highlighter));
+    ui.data_mut(|d| d.insert_temp(slot, (key, rendered.clone())));
+    rendered
+}
+
 /// A Markdown editor, or a read-only view with the same look.
-#[derive(Debug)]
 pub struct MarkdownEditor<'t> {
     text: &'t mut String,
     id: Option<Id>,
     read_only: bool,
     style: Option<MarkdownStyle>,
+    highlighter: Option<&'t dyn Highlighter>,
     desired_rows: usize,
     accessible_label: String,
+}
+
+impl std::fmt::Debug for MarkdownEditor<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MarkdownEditor")
+            .field("text", &self.text)
+            .field("id", &self.id)
+            .field("read_only", &self.read_only)
+            .field("style", &self.style)
+            .field("highlighter", &self.highlighter.is_some())
+            .field("desired_rows", &self.desired_rows)
+            .field("accessible_label", &self.accessible_label)
+            .finish()
+    }
 }
 
 impl<'t> MarkdownEditor<'t> {
@@ -291,6 +343,7 @@ impl<'t> MarkdownEditor<'t> {
             id: None,
             read_only: false,
             style: None,
+            highlighter: None,
             desired_rows: 8,
             accessible_label: String::from("Markdown"),
         }
@@ -322,6 +375,15 @@ impl<'t> MarkdownEditor<'t> {
     /// Defaults to [`MarkdownStyle::from_visuals`] of the `ui`.
     pub fn style(mut self, style: MarkdownStyle) -> Self {
         self.style = Some(style);
+        self
+    }
+
+    /// Colour the code of fenced blocks that name a language (the first word of the info
+    /// string) and YAML front matter with `highlighter`; other code stays plain. It runs when
+    /// the text, the style or the width changes, not every frame; a highlighter swapped for
+    /// another takes effect at the next such change.
+    pub fn highlighter(mut self, highlighter: &'t dyn Highlighter) -> Self {
+        self.highlighter = Some(highlighter);
         self
     }
 
@@ -357,13 +419,17 @@ impl<'t> MarkdownEditor<'t> {
         // Set by each call of the layouter, so the last one (after any edit) wins.
         let mut rules = Vec::new();
         let mut links = Vec::new();
+        let highlighter = self.highlighter;
         let mut layouter = |ui: &Ui, buf: &dyn egui::TextBuffer, wrap_width: f32| {
-            let rendered = ui.memory_mut(|m| {
-                m.caches
-                    .cache::<JobCache>()
-                    .get((buf.as_str(), &style, wrap_width.to_bits()))
-                    .clone()
-            });
+            let rendered = match highlighter {
+                Some(h) => highlighted(ui, id, buf.as_str(), &style, wrap_width, h),
+                None => ui.memory_mut(|m| {
+                    m.caches
+                        .cache::<JobCache>()
+                        .get((buf.as_str(), &style, wrap_width.to_bits()))
+                        .clone()
+                }),
+            };
             rules = rendered.rules;
             links = rendered.links;
             ui.fonts_mut(|f| f.layout_job(rendered.job))

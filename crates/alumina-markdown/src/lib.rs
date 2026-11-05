@@ -14,6 +14,9 @@
 //! - [`parse`], [`MarkdownStyle`] and [`layout`]: the source read into blocks and marks, and
 //!   turned into a `LayoutJob`.
 //!
+//! The code of a fenced block that names a language, and YAML front matter, are coloured by
+//! the app's [`Highlighter`]; see [`MarkdownEditor::highlighter`].
+//!
 //! Headings, emphasis, strong, strikethrough, inline and fenced code, lists, task lists,
 //! block quotes, links and thematic breaks are covered. Ticking a `[ ]` by clicking is not.
 //!
@@ -40,6 +43,7 @@ mod parse;
 mod style;
 mod toolbar;
 
+pub use alumina_code::{CodeTheme, Highlighter, TokenKind};
 pub use commands::{Command, Edit, command, indent, newline};
 pub use editor::{MarkdownEditor, MarkdownOutput};
 pub use egui;

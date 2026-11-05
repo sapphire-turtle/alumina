@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- *(alumina-markdown)* YAML front matter, shown as code
+- *(alumina-markdown)* code blocks and front matter coloured by the app's Highlighter
+
 ## [0.1.0](https://github.com/sapphire-turtle/alumina/releases/tag/alumina-markdown-v0.1.0) - 2026-11-04
 
 ### Added

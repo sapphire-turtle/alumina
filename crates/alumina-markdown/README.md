@@ -40,7 +40,20 @@ editing, so that a plain click still places the cursor.
 
 Headings (`#` to `######`, and setext), emphasis, strong, strikethrough, inline code, fenced
 and indented code blocks, lists (bulleted, numbered, nested), task list items, block quotes
-(nested), links (inline, autolinks, references) and thematic breaks.
+(nested), links (inline, autolinks, references), thematic breaks and YAML front matter
+(the `---` block at the very start, shown as code).
+
+## Highlighting
+
+alumina knows no language: give the editor a `Highlighter` and it colours the code of
+fenced blocks that name a language (the first word of the info string) and the front matter
+(`"yaml"`), by the `CodeTheme` in `MarkdownStyle::code_theme`. Indented blocks and fences
+without a language stay plain. The highlighter runs when the text, style or width changes,
+not every frame; one swapped while the text is unchanged takes effect at the next change.
+
+```rust,ignore
+MarkdownEditor::new(&mut text).highlighter(&my_highlighter).show(ui);
+```
 
 ## Keys
 
@@ -66,9 +79,7 @@ icons: give a button an `egui::ImageSource` with `ToolbarIcons`.
 
 ## Not yet
 
-Tables, images shown inline, math, wiki links (`[[...]]`), folding and syntax highlighting
-in code blocks (see [#15](https://github.com/sapphire-turtle/alumina/issues/15)), and YAML
-front matter ([#14](https://github.com/sapphire-turtle/alumina/issues/14)).
+Tables, images shown inline, math, wiki links (`[[...]]`) and folding.
 
 Ticking a `[ ]` by clicking is not done, read-only or editing: it would be an edit in a
 widget that does not edit, or a click that does not place the cursor.

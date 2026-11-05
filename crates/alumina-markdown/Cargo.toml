@@ -10,6 +10,7 @@ keywords = ["egui", "markdown", "editor", "text-editor", "gui"]
 categories = ["gui", "text-editors"]
 
 [dependencies]
+alumina-code = { workspace = true }
 egui = { workspace = true }
 pulldown-cmark = { version = "0.13", default-features = false }
 
