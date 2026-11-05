@@ -1242,3 +1242,63 @@ mod highlighting {
         assert_ne!(a, b);
     }
 }
+
+fn key_event(key: Key, modifiers: Modifiers) -> Event {
+    Event::Key {
+        key,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers,
+    }
+}
+
+#[test]
+fn text_then_enter_in_one_frame_keeps_the_order() {
+    let mut h = editor_with("- a", false);
+    end(&mut h);
+    h.input_mut()
+        .events
+        .extend([Event::Text("b".into()), enter_key()]);
+    h.run();
+    // In the order typed; the Enter after the text is egui's, so no new item.
+    assert_eq!(h.state().text, "- ab\n");
+}
+
+#[test]
+fn enter_then_text_in_one_frame_keeps_the_order() {
+    let mut h = editor_with("- a", false);
+    end(&mut h);
+    h.input_mut()
+        .events
+        .extend([enter_key(), Event::Text("b".into())]);
+    h.run();
+    assert_eq!(h.state().text, "- a\n- b");
+}
+
+#[test]
+fn winit_order_for_a_typed_char_then_enter() {
+    let mut h = editor_with("- a", false);
+    end(&mut h);
+    h.input_mut().events.extend([
+        key_event(Key::B, Modifiers::NONE),
+        Event::Text("b".into()),
+        enter_key(),
+    ]);
+    h.run();
+    assert_eq!(h.state().text, "- ab\n");
+}
+
+#[test]
+fn shortcut_after_text_in_one_frame_loses_no_text() {
+    let mut h = editor_with("a", false);
+    end(&mut h);
+    h.input_mut().events.extend([
+        Event::Text("b".into()),
+        key_event(Key::B, Modifiers::COMMAND),
+    ]);
+    h.run();
+    let text = &h.state().text;
+    assert!(text.starts_with("ab"), "{text:?}");
+    assert_eq!(text, "ab");
+}
