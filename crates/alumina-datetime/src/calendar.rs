@@ -7,6 +7,7 @@ use egui::{
 };
 
 use crate::calc::{add_months, add_years, month_start, week_start, weekdays_from};
+use crate::icons::small_button;
 use crate::{CalendarConfig, Period, PeriodKind};
 
 /// What the calendar's grid shows: zooming out from the days to the months to the years.
@@ -259,7 +260,9 @@ impl<'a> Calendar<'a> {
                     vec2(width, ui.spacing().interact_size.y),
                     egui::Layout::left_to_right(egui::Align::Center),
                     |ui| {
-                        if show_today && ui.small_button(&config.labels.today).clicked() {
+                        if show_today
+                            && small_button(ui, &config.labels.today, &config.icons.today).clicked()
+                        {
                             state.cursor = today;
                             state.view = CalendarView::for_kind(state.kind);
                             state.anchor = None;
@@ -270,7 +273,9 @@ impl<'a> Calendar<'a> {
                             ui.with_layout(
                                 egui::Layout::right_to_left(egui::Align::Center),
                                 |ui| {
-                                    if ui.small_button(&config.labels.clear).clicked() {
+                                    if small_button(ui, &config.labels.clear, &config.icons.clear)
+                                        .clicked()
+                                    {
                                         state.anchor = None;
                                         cleared = true;
                                     }
@@ -315,10 +320,10 @@ fn heading(ui: &mut Ui, state: &mut CalendarState, config: &CalendarConfig, widt
             CalendarView::Years => add_years(state.cursor, 10 * sign),
         };
     };
-    if chevron(ui, prev, -1.0, &labels.previous).clicked() {
+    if chevron(ui, prev, -1.0, &labels.previous, &config.icons.previous).clicked() {
         step(state, -1);
     }
-    if chevron(ui, next, 1.0, &labels.next).clicked() {
+    if chevron(ui, next, 1.0, &labels.next, &config.icons.next).clicked() {
         step(state, 1);
     }
 
@@ -352,8 +357,15 @@ fn heading(ui: &mut Ui, state: &mut CalendarState, config: &CalendarConfig, widt
     }
 }
 
-/// An arrow button drawn with lines, needing no font: pointing left (`dir < 0`) or right.
-fn chevron(ui: &mut Ui, rect: Rect, dir: f32, label: &str) -> egui::Response {
+/// An arrow button drawn with lines, needing no font: pointing left (`dir < 0`) or right;
+/// the app's `icon` instead when it has one.
+fn chevron(
+    ui: &mut Ui,
+    rect: Rect,
+    dir: f32,
+    label: &str,
+    icon: &Option<egui::ImageSource<'static>>,
+) -> egui::Response {
     let id = ui.next_auto_id();
     ui.skip_ahead_auto_ids(1);
     let resp = ui
@@ -365,6 +377,12 @@ fn chevron(ui: &mut Ui, rect: Rect, dir: f32, label: &str) -> egui::Response {
     if resp.hovered() {
         ui.painter()
             .rect_filled(rect.shrink(2.0), 4.0, visuals.weak_bg_fill);
+    }
+    if let Some(source) = icon {
+        egui::Image::new(source.clone())
+            .tint(visuals.fg_stroke.color)
+            .paint_at(ui, rect.shrink(rect.height() * 0.2));
+        return resp;
     }
     let c = rect.center();
     let h = (rect.height() * 0.18).max(3.0);

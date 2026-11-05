@@ -176,6 +176,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "egui",
+ "egui_extras",
  "egui_kittest",
 ]
 

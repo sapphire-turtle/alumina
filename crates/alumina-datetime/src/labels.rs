@@ -4,7 +4,7 @@ use std::sync::{Arc, LazyLock};
 
 use chrono::{Local, NaiveDate, Weekday};
 
-use crate::PeriodKind;
+use crate::{CalendarIcons, PeriodKind};
 
 /// Every word the widgets show. [`Labels::default`] is English; an app passes its own
 /// translation (corundum's Fluent strings, say) through [`CalendarConfig::labels`].
@@ -114,6 +114,8 @@ static ENGLISH: LazyLock<Arc<Labels>> = LazyLock::new(|| Arc::new(Labels::defaul
 #[derive(Clone, Debug)]
 pub struct CalendarConfig {
     pub labels: Arc<Labels>,
+    /// The app's icons for the buttons; none by default (arrows drawn, words for the rest).
+    pub icons: Arc<CalendarIcons>,
     /// The day the weeks start on: the first column, and the weeks a week pick spans.
     pub first_weekday: Weekday,
     /// A column of ISO week numbers before the days (when weeks start on Monday).
@@ -128,6 +130,7 @@ impl Default for CalendarConfig {
     fn default() -> Self {
         Self {
             labels: ENGLISH.clone(),
+            icons: Arc::default(),
             first_weekday: Weekday::Mon,
             show_week_numbers: false,
             cell_size: 28.0,
@@ -139,6 +142,12 @@ impl Default for CalendarConfig {
 impl CalendarConfig {
     pub fn labels(mut self, labels: impl Into<Arc<Labels>>) -> Self {
         self.labels = labels.into();
+        self
+    }
+
+    /// The app's icons for the buttons that can be one; [`Labels`] stay their names.
+    pub fn icons(mut self, icons: impl Into<Arc<CalendarIcons>>) -> Self {
+        self.icons = icons.into();
         self
     }
 

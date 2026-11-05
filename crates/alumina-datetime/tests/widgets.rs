@@ -5,8 +5,8 @@
 
 use alumina_datetime::chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 use alumina_datetime::{
-    Calendar, CalendarConfig, CalendarState, CalendarView, DatePickerButton, DateTimePicker, Drum,
-    Period, PeriodKind, PeriodPickerButton, TimeDrum,
+    Calendar, CalendarConfig, CalendarIcons, CalendarState, CalendarView, DatePickerButton,
+    DateTimePicker, Drum, Period, PeriodKind, PeriodPickerButton, TimeDrum,
 };
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable as _;
@@ -256,4 +256,91 @@ fn datetime_picker_stacks_on_a_narrow_screen() {
         }
         render(&mut h, name);
     }
+}
+
+const SVG: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><path d="M3 2h6a3 3 0 0 1 0 6H3z" fill="none" stroke="currentColor"/></svg>"#;
+
+fn icon(name: &str) -> Option<egui::ImageSource<'static>> {
+    Some(egui::ImageSource::Bytes {
+        uri: format!("bytes://{name}.svg").into(),
+        bytes: SVG.as_bytes().into(),
+    })
+}
+
+fn with_icons() -> Harness<'static, Cal> {
+    let state = Cal {
+        state: CalendarState::for_period(None, &[PeriodKind::Day], d(2026, 11, 3)),
+        kinds: vec![PeriodKind::Day],
+        value: None,
+    };
+    let icons = CalendarIcons {
+        previous: icon("previous"),
+        today: icon("today"),
+        clear: icon("clear"),
+        ..CalendarIcons::default()
+    };
+    Harness::builder().with_size([320.0, 330.0]).build_ui_state(
+        move |ui, s: &mut Cal| {
+            egui_extras::install_image_loaders(ui.ctx());
+            let r = Calendar::new("cal", &mut s.state)
+                .kinds(&s.kinds)
+                .selection(s.value)
+                .config(config().icons(icons.clone()))
+                .show_clear(true)
+                .show(ui);
+            if let Some(p) = r.picked {
+                s.value = Some(p);
+            }
+            if r.cleared {
+                s.value = None;
+            }
+        },
+        state,
+    )
+}
+
+#[test]
+fn without_icons_the_buttons_are_the_arrows_and_the_words() {
+    let mut h = calendar(&[PeriodKind::Day]);
+    h.get_by_label("Previous").click();
+    h.run();
+    assert_eq!(h.state().state.cursor, d(2026, 10, 3));
+    h.get_by_label("Today").click();
+    h.run();
+    assert_eq!(h.state().value, Some(Period::Day(d(2026, 11, 3))));
+    h.get_by_label("Clear").click();
+    h.run();
+    assert_eq!(h.state().value, None);
+}
+
+#[test]
+fn icon_buttons_are_found_by_their_labels_and_act_as_the_text_ones() {
+    let mut h = with_icons();
+    h.run();
+    h.get_by_label("Previous").click();
+    h.run();
+    assert_eq!(h.state().state.cursor, d(2026, 10, 3));
+    // The next arrow has no icon: still drawn, still named.
+    h.get_by_label("Next").click();
+    h.run();
+    assert_eq!(h.state().state.cursor, d(2026, 11, 3));
+    h.get_by_label("Today").click();
+    h.run();
+    assert_eq!(h.state().value, Some(Period::Day(d(2026, 11, 3))));
+    h.get_by_label("Clear").click();
+    h.run();
+    assert_eq!(h.state().value, None);
+    render(&mut h, "calendar_icons");
+}
+
+#[test]
+fn icon_buttons_show_their_label_as_hover_text() {
+    let mut h = with_icons();
+    h.run();
+    h.get_by_label("Today").hover();
+    for _ in 0..10 {
+        h.step();
+    }
+    // The button, and its tooltip.
+    assert_eq!(h.get_all_by_label("Today").count(), 2);
 }
