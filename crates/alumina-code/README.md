@@ -61,9 +61,34 @@ indent = "tab"
 indent = { spaces = 2 }
 ```
 
-## Not yet
+## Highlighting
 
-Syntax highlighting, see [#15](https://github.com/sapphire-turtle/alumina/issues/15).
+The editor knows no language: your app implements `Highlighter`, which turns a language name
+and some code into byte ranges of `TokenKind`s (return `None` for a language you do not
+know). The colours follow the theme: `CodeTheme::from_visuals` reads dark or light from the
+`ui`, or give your own with `.theme(..)`. The highlighter runs when the text, language, theme,
+width or font changes, not every frame; a highlighter swapped for another takes effect at the
+next such change. Ranges it returns past the end, empty, reversed or off a char boundary are
+dropped.
+
+```rust
+use std::ops::Range;
+use alumina_code::{CodeEditor, Highlighter, TokenKind};
+use alumina_code::egui;
+
+struct Fns;
+impl Highlighter for Fns {
+    fn highlight(&self, language: &str, code: &str) -> Option<Vec<(Range<usize>, TokenKind)>> {
+        (language == "rust").then(|| {
+            code.match_indices("fn").map(|(i, m)| (i..i + m.len(), TokenKind::Keyword)).collect()
+        })
+    }
+}
+
+fn editor(ui: &mut egui::Ui, source: &mut String) {
+    CodeEditor::new(source).language("rust").highlighter(&Fns).show(ui);
+}
+```
 
 ## Versions
 

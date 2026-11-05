@@ -10,3 +10,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - *(alumina-code)* `CodeEditor`, a code editor that keeps the indentation, and `Indent`, the app's unit, readable from settings with the `serde` feature
+- *(alumina-code)* syntax highlighting through the app's `Highlighter`, coloured by `CodeTheme`
