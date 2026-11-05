@@ -471,3 +471,20 @@ fn the_today_and_clear_icons_keep_the_buttons_height() {
         assert!((a - b).abs() < 0.5, "{name}: {b} against {a}");
     }
 }
+
+#[test]
+fn a_non_square_chevron_icon_leaves_the_button_alone() {
+    let wide = r#"<svg xmlns="http://www.w3.org/2000/svg" width="48" height="24" viewBox="0 0 48 24"><path d="M4 4h40v16H4z"/></svg>"#;
+    let rect = |icons: CalendarIcons| {
+        let (mut h, _) = with_icons(icons);
+        h.run();
+        h.run();
+        h.get_by_label("Previous").rect()
+    };
+    let mut icons = CalendarIcons::default();
+    icons.previous = Some(egui::ImageSource::Bytes {
+        uri: "bytes://wide.svg".into(),
+        bytes: wide.as_bytes().into(),
+    });
+    assert_eq!(rect(icons), rect(CalendarIcons::default()));
+}

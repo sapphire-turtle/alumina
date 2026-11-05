@@ -379,13 +379,15 @@ fn chevron(
             .rect_filled(rect.shrink(2.0), 4.0, visuals.weak_bg_fill);
     }
     if let Some(source) = icon {
-        // Fit inside the shrunk rect, keeping the aspect ratio; tinted like the other
-        // icons (the static text colour).
-        let side = rect.height() * 0.6;
-        egui::Image::new(source.clone())
-            .fit_to_exact_size(vec2(side, side))
-            .tint(ui.visuals().text_color())
-            .paint_at(ui, Rect::from_center_size(rect.center(), vec2(side, side)));
+        // Fitted inside a square, keeping the aspect ratio (`paint_at` stretches to the rect
+        // it is given, so the rect is sized from the image's own size; the square while it
+        // loads); tinted like the other icons (the static text colour).
+        let side = vec2(rect.height() * 0.6, rect.height() * 0.6);
+        let image = egui::Image::new(source.clone())
+            .fit_to_exact_size(side)
+            .tint(ui.visuals().text_color());
+        let size = image.load_and_calc_size(ui, side).unwrap_or(side);
+        image.paint_at(ui, Rect::from_center_size(rect.center(), size));
         return resp;
     }
     let c = rect.center();
