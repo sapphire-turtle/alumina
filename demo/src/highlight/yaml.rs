@@ -279,4 +279,25 @@ mod tests {
         assert!(has("k : v", "k", TokenKind::Key));
         assert!(has("a: x\u{a0}", "x", TokenKind::String));
     }
+
+    #[test]
+    fn the_sample_is_tokenised_soundly() {
+        let code = include_str!("../code-sample.yaml");
+        let tokens = highlight(code);
+        for (r, _) in &tokens {
+            assert!(r.start < r.end, "empty or reversed token {r:?}");
+            assert!(code.is_char_boundary(r.start) && code.is_char_boundary(r.end));
+        }
+        for kind in [
+            TokenKind::Comment,
+            TokenKind::Key,
+            TokenKind::String,
+            TokenKind::Number,
+            TokenKind::Constant,
+            TokenKind::Attribute,
+            TokenKind::Punctuation,
+        ] {
+            assert!(tokens.iter().any(|(_, k)| *k == kind), "no {kind:?}");
+        }
+    }
 }

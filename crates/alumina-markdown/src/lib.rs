@@ -18,7 +18,8 @@
 //! the app's [`Highlighter`]; see [`MarkdownEditor::highlighter`].
 //!
 //! Headings, emphasis, strong, strikethrough, inline and fenced code, lists, task lists,
-//! block quotes, links and thematic breaks are covered. Ticking a `[ ]` by clicking is not.
+//! block quotes, links, thematic breaks and YAML front matter (a `---` on the first line to
+//! the next `---` or `...` line) are covered. Ticking a `[ ]` by clicking is not.
 //!
 //! ```no_run
 //! use alumina_markdown::{MarkdownEditor, MarkdownToolbar, egui};

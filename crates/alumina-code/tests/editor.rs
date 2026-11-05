@@ -7,10 +7,10 @@ use alumina_code::egui::{Event, Id, ImeEvent, Key, MissingGlyphPolicy, Modifiers
 use alumina_code::{CodeEditor, CodeTheme, Highlighter, Indent, TokenKind};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable as _;
-use std::cell::Cell;
 use std::ops::Range;
 use std::rc::Rc;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[derive(Default)]
 struct State {
@@ -291,12 +291,12 @@ fn the_indent_unit_is_the_app_s() {
 /// Marks every `fn` as a keyword for the language `"test"`, and counts its calls.
 #[derive(Default)]
 struct Fns {
-    calls: Cell<usize>,
+    calls: AtomicUsize,
 }
 
 impl Highlighter for Fns {
     fn highlight(&self, language: &str, code: &str) -> Option<Vec<(Range<usize>, TokenKind)>> {
-        self.calls.set(self.calls.get() + 1);
+        self.calls.fetch_add(1, Ordering::Relaxed);
         (language == "test").then(|| {
             code.match_indices("fn")
                 .map(|(i, m)| (i..i + m.len(), TokenKind::Keyword))
@@ -363,12 +363,12 @@ fn the_highlighter_runs_once_for_unchanged_text() {
     for _ in 0..10 {
         h.run();
     }
-    assert_eq!(fns.calls.get(), 1);
+    assert_eq!(fns.calls.load(Ordering::Relaxed), 1);
     h.state_mut().text.push('b');
     for _ in 0..3 {
         h.run();
     }
-    assert_eq!(fns.calls.get(), 2);
+    assert_eq!(fns.calls.load(Ordering::Relaxed), 2);
 }
 
 #[test]
@@ -378,4 +378,11 @@ fn empty_text_keeps_its_row_height() {
     let height = |h: &Harness<'_, Hl>| h.state().galley.as_ref().unwrap().rect.height();
     assert!(height(&h) > 0.0);
     assert_eq!(height(&h), height(&plain));
+}
+
+fn assert_auto<T: Send + Sync + std::panic::RefUnwindSafe>() {}
+
+#[test]
+fn the_editor_is_send_sync_and_ref_unwind_safe() {
+    assert_auto::<CodeEditor<'static>>();
 }

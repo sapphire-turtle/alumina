@@ -41,7 +41,8 @@ editing, so that a plain click still places the cursor.
 Headings (`#` to `######`, and setext), emphasis, strong, strikethrough, inline code, fenced
 and indented code blocks, lists (bulleted, numbered, nested), task list items, block quotes
 (nested), links (inline, autolinks, references), thematic breaks and YAML front matter
-(the `---` block at the very start, shown as code).
+(from a `---` on the first line to the next `---` or `...` line, shown as code; one not yet
+closed, while typing, shows as code down to the next `---` line).
 
 ## Highlighting
 

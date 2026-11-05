@@ -68,8 +68,9 @@ and some code into byte ranges of `TokenKind`s (return `None` for a language you
 know). The colours follow the theme: `CodeTheme::from_visuals` reads dark or light from the
 `ui`, or give your own with `.theme(..)`. The highlighter runs when the text, language, theme,
 width or font changes, not every frame; a highlighter swapped for another takes effect at the
-next such change. Ranges it returns past the end, empty, reversed or off a char boundary are
-dropped.
+next such change. Ranges it returns are cut at the end of the code; empty, reversed or off-char-boundary
+ranges are dropped; later ranges win. A `Highlighter` is `Send + Sync + RefUnwindSafe`, so a
+cache inside it needs a `Mutex` or atomics.
 
 ```rust
 use std::ops::Range;

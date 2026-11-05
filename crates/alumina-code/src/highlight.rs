@@ -47,19 +47,34 @@ impl TokenKind {
     ];
 
     fn index(self) -> usize {
-        Self::ALL.iter().position(|k| *k == self).unwrap_or(0)
+        match self {
+            TokenKind::Comment => 0,
+            TokenKind::Keyword => 1,
+            TokenKind::Type => 2,
+            TokenKind::Function => 3,
+            TokenKind::String => 4,
+            TokenKind::Number => 5,
+            TokenKind::Constant => 6,
+            TokenKind::Key => 7,
+            TokenKind::Punctuation => 8,
+            TokenKind::Attribute => 9,
+        }
     }
 }
 
 /// Finds the tokens of a piece of code. The app implements it with whatever it likes (a
 /// regex, `syntect`, tree-sitter).
-pub trait Highlighter {
+///
+/// `Send`, `Sync` and `RefUnwindSafe` are required so that an editor holding a
+/// `&dyn Highlighter` stays `Send`, `Sync` and `RefUnwindSafe`, as it is without one. A
+/// highlighter that keeps a cache uses a `Mutex` or atomics, not a `RefCell` or `Cell`.
+pub trait Highlighter: Send + Sync + std::panic::RefUnwindSafe {
     /// The tokens of `code` written in `language` (a name such as `"rust"`, as the app
     /// uses it), as byte ranges of `code`; `None` if the language is not known, which
     /// leaves the code plain.
     ///
-    /// The ranges are not trusted: those past the end, empty, reversed or off a char
-    /// boundary are dropped, and where they overlap the later one wins.
+    /// The ranges are not trusted: they are cut at the end of the code; empty, reversed or
+    /// off-char-boundary ranges are dropped; later ranges win.
     fn highlight(&self, language: &str, code: &str) -> Option<Vec<(Range<usize>, TokenKind)>>;
 }
 

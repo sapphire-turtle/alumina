@@ -1181,29 +1181,54 @@ mod highlighting {
             style.code_theme.color(TokenKind::Keyword),
             style.code_theme.color(TokenKind::Key),
         );
-        // Code `aéb`: bytes a=0, é=1..3, b=3.
-        let src = "```rust\naéb\n```\n";
+        // Code `aéb\nçd`: a=0, é=1..3, b=3, newline=4, ç=5..7, d=7.
+        let src = "```rust\naéb\nçd\n```\n";
         let at = src.find('a').unwrap();
-        // Ends inside `é`: dropped. Then 0..3 Keyword, overlapped by 1..4 Key: the later
-        // wins on 1..3, and 3..4 is Key too.
+        // 0..3 Keyword, overlapped by 1..4 Key: the later wins on 1..3, and 3..4 is Key too.
+        // 6..8 starts inside `ç`: dropped, and nothing overwrites those bytes.
         let h = Fixed(vec![
-            (0..2, TokenKind::Type),
             (0..3, TokenKind::Keyword),
             (1..4, TokenKind::Key),
+            (6..8, TokenKind::Type),
         ]);
         let s = sections(src, Some(&h), 2);
         assert_eq!(color_at(&s, at), kw);
         assert_eq!(color_at(&s, at + 1), key);
         assert_eq!(color_at(&s, at + 2), key);
         assert_eq!(color_at(&s, at + 3), key);
-        assert_ne!(color_at(&s, at + 4), key);
+        let plain = color_at(&s, at + 4);
+        assert_ne!(plain, key);
+        for b in at + 5..at + 8 {
+            assert_eq!(color_at(&s, b), plain, "byte {b}");
+        }
     }
 
     #[test]
     fn the_highlighter_runs_once_for_unchanged_text() {
         let t = Test::default();
-        sections("```rust\nfn\n```\n", Some(&t), 6);
+        let id = Id::unique("once");
+        let mut h = Harness::builder().with_size([400.0, 200.0]).build_ui_state(
+            |ui, text: &mut String| {
+                MarkdownEditor::new(text).id(id).highlighter(&t).show(ui);
+            },
+            "```rust\nfn\n```\n".to_owned(),
+        );
+        for _ in 0..6 {
+            h.step();
+        }
         assert_eq!(t.asked.lock().unwrap().len(), 1);
+        h.state_mut().push('x');
+        for _ in 0..3 {
+            h.step();
+        }
+        assert_eq!(t.asked.lock().unwrap().len(), 2);
+    }
+
+    fn assert_auto<T: Send + Sync + std::panic::RefUnwindSafe>() {}
+
+    #[test]
+    fn the_editor_is_send_sync_and_ref_unwind_safe() {
+        assert_auto::<MarkdownEditor<'static>>();
     }
 
     #[test]

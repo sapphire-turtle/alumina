@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- *(alumina-markdown)* a document starting with `---` ... `---` is now read as front matter, where it was a thematic break and a setext heading
+- *(alumina-markdown)* depends on alumina-code, whose `Highlighter`, `TokenKind` and `CodeTheme` it re-exports
+
 ### Added
 
 - *(alumina-markdown)* YAML front matter, shown as code
