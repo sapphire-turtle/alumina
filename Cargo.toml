@@ -9,8 +9,8 @@ edition = "2024"
 
 [workspace.dependencies]
 alumina-code = { version = "0.1.0", path = "crates/alumina-code" }
-alumina-datetime = { version = "0.1.0", path = "crates/alumina-datetime" }
-alumina-markdown = { version = "0.1.0", path = "crates/alumina-markdown" }
+alumina-datetime = { version = "0.2.0", path = "crates/alumina-datetime" }
+alumina-markdown = { version = "0.2.0", path = "crates/alumina-markdown" }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 egui = "0.37"
 tracing = "0.1"

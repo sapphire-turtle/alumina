@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/sapphire-turtle/alumina/compare/alumina-markdown-v0.1.0...alumina-markdown-v0.2.0) - 2026-11-05
+
+### Added
+
+- *(alumina-markdown)* highlighted code blocks and front matter (#15, #14)
+- *(alumina-markdown)* YAML front matter, and each code block's content ([#14](https://github.com/sapphire-turtle/alumina/pull/14))
+
+### Fixed
+
+- *(alumina-markdown)* keep the typed order when keys come together ([#30](https://github.com/sapphire-turtle/alumina/pull/30))
+- *(alumina-code)* Highlighter is Send + Sync + RefUnwindSafe; docs, hardening and tests (#15, #14)
+- *(alumina-markdown)* map tokens in one pass, and test multi-line pieces ([#15](https://github.com/sapphire-turtle/alumina/pull/15))
+- *(alumina-markdown)* a later --- pair keeps the front matter ([#14](https://github.com/sapphire-turtle/alumina/pull/14))
+
+### Other
+
+- *(alumina-code)* [**breaking**] Highlighter has no thread bounds ([#15](https://github.com/sapphire-turtle/alumina/pull/15))
+
 ### Fixed
 
 - *(alumina-markdown)* several keys in one frame (typed text and Enter, Tab or a shortcut) are applied in the order typed (#30)

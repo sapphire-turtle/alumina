@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/sapphire-turtle/alumina/compare/alumina-datetime-v0.1.0...alumina-datetime-v0.2.0) - 2026-11-05
+
+### Added
+
+- *(alumina-datetime)* the app's icons for the calendar's buttons ([#13](https://github.com/sapphire-turtle/alumina/pull/13))
+
+### Fixed
+
+- *(alumina-datetime)* a chevron icon keeps its aspect ratio ([#13](https://github.com/sapphire-turtle/alumina/pull/13))
+- *(alumina-datetime)* non_exhaustive config, icon sizes, and tests that see the icons ([#13](https://github.com/sapphire-turtle/alumina/pull/13))
+
 ### Changed
 
 - **breaking** *(alumina-datetime)* `Labels`, `CalendarConfig` and the new `CalendarIcons` are `#[non_exhaustive]` (build them from `default()` and set fields)

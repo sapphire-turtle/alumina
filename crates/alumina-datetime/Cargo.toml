@@ -1,6 +1,6 @@
 [package]
 name = "alumina-datetime"
-version = "0.1.0"
+version = "0.2.0"
 description = "egui widgets for picking dates, periods, times and timestamps: a calendar, time drums and picker buttons"
 edition.workspace = true
 license.workspace = true
