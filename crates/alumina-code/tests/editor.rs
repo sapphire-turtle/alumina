@@ -30,6 +30,8 @@ fn editor(text: &str, read_only: bool, indent: Indent) -> Harness<'static, State
                 .indent(s.indent)
                 .show(ui);
             s.changed |= out.changed;
+            // Something else for the focus to go to.
+            let _ = ui.button("next");
         },
         State {
             text: text.into(),
@@ -166,8 +168,28 @@ fn undo_reverts_one_edit() {
     set_cursor(&mut h, 1);
     key(&mut h, Key::Enter, Modifiers::NONE);
     assert_eq!(h.state().text, "{\n    \n}");
+    key(&mut h, Key::Enter, Modifiers::NONE);
     key(&mut h, Key::Z, Modifiers::COMMAND);
-    assert_eq!(h.state().text, "{}");
+    assert_eq!(h.state().text, "{\n    \n}");
+}
+
+#[test]
+fn an_egui_event_before_a_press_keeps_the_order() {
+    let mut h = with("{}");
+    set_cursor(&mut h, 1);
+    h.input_mut()
+        .events
+        .extend([Event::Text("a".into()), enter_key()]);
+    h.run();
+    assert_eq!(h.state().text, "{a\n}");
+
+    let mut h = with("{}");
+    set_cursor(&mut h, 1);
+    h.input_mut()
+        .events
+        .extend([enter_key(), Event::Text("x".into())]);
+    h.run();
+    assert_eq!(h.state().text, "{\n    x\n}");
 }
 
 #[test]
@@ -198,11 +220,14 @@ fn ime_keeps_enter_and_closers() {
 fn read_only_takes_nothing() {
     let mut h = editor("{}", true, Indent::default());
     set_cursor(&mut h, 1);
+    text(&mut h, "}");
     key(&mut h, Key::Enter, Modifiers::NONE);
     key(&mut h, Key::Tab, Modifiers::NONE);
-    text(&mut h, "}");
+    h.run();
     assert_eq!(h.state().text, "{}");
     assert!(!h.state().changed);
+    // Tab leaves a read-only editor, as it does any widget.
+    assert_ne!(h.ctx.memory(|m| m.focused()), Some(Id::unique(ID)));
 }
 
 #[test]

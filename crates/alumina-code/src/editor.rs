@@ -100,8 +100,26 @@ fn forget_composing(ctx: &Context, id: Id) {
     ctx.data_mut(|d| d.remove::<bool>(composing_id(id)));
 }
 
+/// Whether `event`, left for egui, edits the text or moves the cursor.
+fn egui_edits(event: &Event) -> bool {
+    matches!(
+        event,
+        Event::Text(_)
+            | Event::Paste(_)
+            | Event::Cut
+            | Event::Ime(_)
+            | Event::Key { pressed: true, .. }
+    )
+}
+
 /// Take the keys the focused, editable editor `id` handles out of this frame's input, and
 /// apply their edits to `text` before the `TextEdit` sees the rest. Whether `text` changed.
+///
+/// The edits come before egui's, so the editor takes presses only up to the first event of
+/// the frame that it leaves for egui and that edits the text or moves the cursor (a `Text`,
+/// `Paste`, `Cut`, `Ime` event, or a pressed key it does not take, including a Backspace or
+/// closer whose edit is `None`). From that event on it takes nothing more this frame: the
+/// later presses reach egui as they are, so that the text comes out in the order typed.
 fn take_keys(ui: &Ui, id: Id, text: &mut String, unit: Indent) -> bool {
     let ctx = ui.ctx();
     let was_composing = ctx.data(|d| d.get_temp::<bool>(composing_id(id)).unwrap_or(false));
@@ -112,23 +130,28 @@ fn take_keys(ui: &Ui, id: Id, text: &mut String, unit: Indent) -> bool {
         return false;
     }
 
-    // The presses to act on, in order; most frames have none.
+    // The presses to act on, in order, up to the first event egui will handle that edits the
+    // text or moves the cursor; most frames have none.
     let presses: Vec<(usize, Press)> = ui.input(|i| {
-        i.events
-            .iter()
-            .enumerate()
-            .filter_map(|(at, e)| press(e).map(|p| (at, p)))
-            .collect()
+        let mut presses = Vec::new();
+        for (at, e) in i.events.iter().enumerate() {
+            match press(e) {
+                Some(p) => presses.push((at, p)),
+                None if egui_edits(e) => break,
+                None => {}
+            }
+        }
+        presses
     });
     if presses.is_empty() {
         return false;
     }
     // With no cursor yet (focus just gained), act at the end of the text.
     let mut sel = selection(ctx, id, text).unwrap_or(text.len()..text.len());
-    let mut taken = 0;
     let mut tabbed = false;
     let mut changed = false;
-    for (at, press) in presses {
+    // Each press that does not end the loop is taken, so `taken` is its index.
+    for (taken, (at, press)) in presses.into_iter().enumerate() {
         let edit = match press {
             Press::Enter => Some(newline(text, sel.clone(), unit)),
             Press::Tab(false) => indent(text, sel.clone(), unit),
@@ -140,10 +163,10 @@ fn take_keys(ui: &Ui, id: Id, text: &mut String, unit: Indent) -> bool {
         // Nothing to do: the key is egui's, except Tab, whose own handling would delete the
         // selection.
         if edit.is_none() && !is_tab {
-            continue;
+            // Left for egui, which edits at the cursor: what follows must come after it.
+            break;
         }
         ui.input_mut(|i| i.events.remove(at - taken));
-        taken += 1;
         tabbed |= is_tab;
         if let Some(edit) = edit {
             apply(ctx, id, text, &edit);
