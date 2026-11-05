@@ -1,0 +1,23 @@
+[package]
+name = "alumina-code"
+version = "0.1.0"
+description = "A code editor for egui that keeps the indentation"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+readme = "README.md"
+keywords = ["egui", "code", "editor", "text-editor", "gui"]
+categories = ["gui", "text-editors"]
+
+[features]
+serde = ["dep:serde"]
+
+[dependencies]
+egui = { workspace = true }
+serde = { version = "1", default-features = false, features = ["derive"], optional = true }
+
+[dev-dependencies]
+# egui's own fonts, for the tests' windows, which have no system's.
+egui = { workspace = true, features = ["default_fonts"] }
+egui_kittest = { version = "0.37", features = ["wgpu", "snapshot"] }
+serde_json = "1"

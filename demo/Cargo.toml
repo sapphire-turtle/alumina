@@ -16,6 +16,7 @@ name = "alumina-demo"
 path = "src/main.rs"
 
 [dependencies]
+alumina-code = { workspace = true }
 alumina-datetime = { workspace = true }
 alumina-markdown = { workspace = true }
 # The window is corundum's, as in the apps: it finds a CJK font for the Japanese labels.

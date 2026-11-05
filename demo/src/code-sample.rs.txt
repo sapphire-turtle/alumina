@@ -1,0 +1,31 @@
+use std::collections::HashMap;
+
+struct Counter {
+    counts: HashMap<String, usize>,
+}
+
+impl Counter {
+    fn new() -> Self {
+        Self {
+            counts: HashMap::new(),
+        }
+    }
+
+    fn add(&mut self, word: &str) {
+        *self.counts.entry(word.to_owned()).or_insert(0) += 1;
+    }
+
+    fn most_common(&self) -> Option<(&String, &usize)> {
+        self.counts.iter().max_by_key(|(_, n)| **n)
+    }
+}
+
+fn main() {
+    let mut counter = Counter::new();
+    for word in "the cat and the hat".split(' ') {
+        counter.add(word);
+    }
+    if let Some((word, n)) = counter.most_common() {
+        println!("{word}: {n}");
+    }
+}

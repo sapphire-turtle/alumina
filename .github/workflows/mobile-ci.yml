@@ -42,7 +42,7 @@ jobs:
       - name: Clippy (device and simulator)
         run: |
           for t in aarch64-apple-ios aarch64-apple-ios-sim; do
-            cargo clippy -p alumina-datetime -p alumina-markdown --target "$t" --all-targets --locked -- -D warnings || exit 1
+            cargo clippy -p alumina-datetime -p alumina-code -p alumina-markdown --target "$t" --all-targets --locked -- -D warnings || exit 1
           done
 
       - name: Test on the simulator
@@ -52,7 +52,7 @@ jobs:
           xcrun simctl bootstatus "$udid" -b
           echo "SIM_UDID=$udid" >> "$GITHUB_ENV"
           export CARGO_TARGET_AARCH64_APPLE_IOS_SIM_RUNNER="xcrun simctl spawn $udid"
-          cargo test -p alumina-datetime -p alumina-markdown --lib --target aarch64-apple-ios-sim --locked
+          cargo test -p alumina-datetime -p alumina-code -p alumina-markdown --lib --target aarch64-apple-ios-sim --locked
 
   android:
     runs-on: ubuntu-latest
@@ -74,13 +74,13 @@ jobs:
       - name: Clippy (arm64 phones and x86_64 emulators)
         run: |
           export ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME"
-          cargo ndk -t arm64-v8a -t x86_64 clippy -p alumina-datetime -p alumina-markdown --all-targets --locked -- -D warnings
+          cargo ndk -t arm64-v8a -t x86_64 clippy -p alumina-datetime -p alumina-code -p alumina-markdown --all-targets --locked -- -D warnings
 
       # Built before the emulator starts, so the emulator step only runs them.
       - name: Build the tests
         run: |
           export ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME"
-          cargo ndk -t x86_64 test -p alumina-datetime -p alumina-markdown --lib --no-run --locked
+          cargo ndk -t x86_64 test -p alumina-datetime -p alumina-code -p alumina-markdown --lib --no-run --locked
 
       # The emulator needs hardware acceleration, which the runner allows once /dev/kvm is
       # opened up to its user.
@@ -102,4 +102,4 @@ jobs:
           emulator-options: -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect
           disable-animations: true
           script: |
-            ANDROID_NDK_HOME=$ANDROID_NDK_LATEST_HOME cargo ndk -t x86_64 test -p alumina-datetime -p alumina-markdown --lib --locked
+            ANDROID_NDK_HOME=$ANDROID_NDK_LATEST_HOME cargo ndk -t x86_64 test -p alumina-datetime -p alumina-code -p alumina-markdown --lib --locked
