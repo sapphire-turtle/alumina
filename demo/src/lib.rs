@@ -4,6 +4,9 @@
 
 mod code;
 mod datetime;
+// The Code and Markdown pages take it up next.
+#[allow(dead_code)]
+mod highlight;
 mod markdown;
 
 use corundum_framework_gui::egui;
