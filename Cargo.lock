@@ -178,7 +178,6 @@ dependencies = [
  "corundum-framework-build",
  "corundum-framework-gui",
  "corundum-framework-platform",
- "png 0.18.1",
  "tracing",
  "tracing-subscriber",
 ]
@@ -209,7 +208,6 @@ dependencies = [
  "ndk-context",
  "ndk-sys",
  "num_enum",
- "simd_cesu8",
  "thiserror 2.0.21",
 ]
 
@@ -218,12 +216,6 @@ name = "android-properties"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc7eb209b1518d6bb87b283c20095f5228ecda460da70b44f0802523dea6da04"
-
-[[package]]
-name = "android_log-sys"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "84521a3cf562bc62942e294181d9eef17eb38ceb8c68677bc49f144e4c3d4f8d"
 
 [[package]]
 name = "android_system_properties"
@@ -778,8 +770,6 @@ version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "92f9840be85d8d9bc6d203e8cb044012a2fb1885cbac20dc41a407f6f2ac55ff"
 dependencies = [
- "android-activity",
- "android_log-sys",
  "corundum-framework-platform",
  "eframe",
  "egui",
@@ -796,7 +786,6 @@ dependencies = [
  "raw-window-handle",
  "rfd",
  "tracing",
- "tracing-subscriber",
  "ttf-parser",
  "unic-langid",
 ]

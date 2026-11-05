@@ -10,7 +10,7 @@ any egui app can use them. They depend on egui, not on corundum or a window.
 |---|---|---|
 | [`alumina-datetime`](crates/alumina-datetime) | A calendar (a day, a week, a month, a year or a range), time drums, a timestamp picker, and buttons that open them in a popup | 0.1 |
 | [`alumina-markdown`](crates/alumina-markdown) | A Markdown editor that formats as you type, with shortcuts, a toolbar and list completion | 0.1 |
-| [`alumina-demo`](demo) | An app to try them all, on the desktops, iOS and Android | not released |
+| [`alumina-demo`](demo) | A desktop app to try them all | not released |
 
 ## Trying them
 
@@ -18,8 +18,7 @@ any egui app can use them. They depend on egui, not on corundum or a window.
 cargo run -p alumina-demo
 ```
 
-[`demo/README.md`](demo/README.md) has the iOS simulator, the Android emulator and real
-phones.
+[`demo/README.md`](demo/README.md) says what each page shows.
 
 ## Development
 
@@ -27,9 +26,8 @@ phones.
   [egui_kittest](https://crates.io/crates/egui_kittest) (clicks, keys, popups). With
   `ALUMINA_RENDER_DIR=<dir>` each widget test also renders its window there as a PNG
   (on the GPU, or a software Vulkan such as lavapipe).
-- CI: clippy and the tests on Linux, macOS and Windows; Mobile CI builds for iOS and Android,
-  runs the tests on a simulator and an emulator, and starts the demo there, uploading a
-  screenshot.
+- CI: clippy and the tests on Linux, macOS and Windows; Mobile CI runs clippy on the
+  libraries for iOS and Android and their tests on a simulator and an emulator.
 - [RELEASING.md](RELEASING.md): the releases, with release-plz.
 
 ## Licence
