@@ -1,5 +1,6 @@
 //! The page for alumina-markdown: the formatted editor on a sample.
 
+use crate::highlight::DemoHighlighter;
 use alumina_markdown::{MarkdownEditor, MarkdownToolbar};
 use corundum_framework_gui::egui;
 
@@ -10,6 +11,7 @@ pub struct MarkdownDemo {
     id: egui::Id,
     read_only: bool,
     last_link: Option<String>,
+    highlighter: DemoHighlighter,
 }
 
 impl Default for MarkdownDemo {
@@ -19,6 +21,7 @@ impl Default for MarkdownDemo {
             id: egui::Id::unique("demo-markdown"),
             read_only: false,
             last_link: None,
+            highlighter: DemoHighlighter,
         }
     }
 }
@@ -36,6 +39,7 @@ impl MarkdownDemo {
         egui::ScrollArea::vertical().show(ui, |ui| {
             let out = MarkdownEditor::new(&mut self.text)
                 .id(self.id)
+                .highlighter(&self.highlighter)
                 .read_only(self.read_only)
                 .desired_rows(20)
                 .show(ui);

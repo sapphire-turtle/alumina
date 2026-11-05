@@ -4,8 +4,6 @@
 
 mod code;
 mod datetime;
-// Only the Code and Markdown pages use it, and the next task wires them.
-#[allow(dead_code)]
 mod highlight;
 mod markdown;
 

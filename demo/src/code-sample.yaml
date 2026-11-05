@@ -1,0 +1,31 @@
+# Settings for a small notes app
+app:
+  name: "Notes"
+  version: 1.4
+  debug: false
+  motd: null
+
+defaults: &defaults
+  theme: dark
+  font_size: 14
+  autosave: true
+
+editor:
+  <<: *defaults
+  tab_width: 2
+  ruler: 80
+  title: 'Daily notes'
+
+profiles:
+  home:
+    <<: *defaults
+    path: ~/notes
+  work:
+    <<: *defaults
+    font_size: 12
+    path: /srv/work/notes
+
+plugins:
+  - markdown
+  - spellcheck
+  - "git sync"
