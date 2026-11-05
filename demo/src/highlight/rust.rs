@@ -11,8 +11,15 @@ use syntect::util::LinesWithEndings;
 
 static SYNTAXES: LazyLock<SyntaxSet> = LazyLock::new(SyntaxSet::load_defaults_newlines);
 
+/// syntect scopes the primitive types `storage.type.rust`, as it does `let`; the text tells
+/// them apart.
+const PRIMITIVES: [&str; 17] = [
+    "i8", "i16", "i32", "i64", "i128", "isize", "u8", "u16", "u32", "u64", "u128", "usize", "f32",
+    "f64", "bool", "char", "str",
+];
+
 /// The kind of a scope, by the first rule whose prefix it starts with.
-fn kind_of(scope: Scope) -> Option<TokenKind> {
+fn kind_of(scope: Scope, text: &str) -> Option<TokenKind> {
     let name = scope.build_string();
     let is = |prefix: &str| name.starts_with(prefix);
     Some(if is("comment") {
@@ -30,8 +37,12 @@ fn kind_of(scope: Scope) -> Option<TokenKind> {
     {
         TokenKind::Function
     } else if is("entity.name.type")
+        || is("entity.name.struct")
+        || is("entity.name.enum")
+        || is("entity.name.union")
+        || is("entity.name.trait")
         || is("support.type")
-        || (is("storage.type") && !is("storage.type.function"))
+        || (name == "storage.type.rust" && PRIMITIVES.contains(&text))
     {
         TokenKind::Type
     } else if is("keyword") || is("storage") {
@@ -76,7 +87,12 @@ pub fn highlight(code: &str) -> Vec<(Range<usize>, TokenKind)> {
             if range.is_empty() {
                 continue;
             }
-            if let Some(kind) = stack.as_slice().iter().rev().find_map(|s| kind_of(*s)) {
+            if let Some(kind) = stack
+                .as_slice()
+                .iter()
+                .rev()
+                .find_map(|s| kind_of(*s, &line[range.clone()]))
+            {
                 push(line_start + range.start..line_start + range.end, kind);
             }
         }
@@ -98,10 +114,26 @@ mod tests {
             toks.iter()
                 .any(|(r, k)| *k == kind && r.start <= at && at + text.len() <= r.end)
         };
-        assert!(covers("fn", TokenKind::Keyword) || covers("let", TokenKind::Keyword));
+        assert!(covers("fn", TokenKind::Keyword));
+        assert!(covers("let", TokenKind::Keyword));
         assert!(covers("main", TokenKind::Function));
         assert!(covers("\"x\"", TokenKind::String));
         assert!(covers("// c", TokenKind::Comment));
         assert!(covers("1)", TokenKind::Number) || covers("1", TokenKind::Number));
+    }
+
+    #[test]
+    fn types_are_marked() {
+        let code = "let x: i32 = 1; struct A { b: Vec<String> }\n";
+        let toks = highlight(code);
+        let covers = |text: &str, kind: TokenKind| {
+            let at = code.find(text).unwrap();
+            toks.iter()
+                .any(|(r, k)| *k == kind && r.start <= at && at + text.len() <= r.end)
+        };
+        assert!(covers("let", TokenKind::Keyword));
+        assert!(covers("struct", TokenKind::Keyword));
+        assert!(covers("i32", TokenKind::Type));
+        assert!(covers("A", TokenKind::Type));
     }
 }
