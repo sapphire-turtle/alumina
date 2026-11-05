@@ -370,3 +370,12 @@ fn the_highlighter_runs_once_for_unchanged_text() {
     }
     assert_eq!(fns.calls.get(), 2);
 }
+
+#[test]
+fn empty_text_keeps_its_row_height() {
+    let (h, _) = highlighted("", "test", true);
+    let (plain, _) = highlighted("", "test", false);
+    let height = |h: &Harness<'_, Hl>| h.state().galley.as_ref().unwrap().rect.height();
+    assert!(height(&h) > 0.0);
+    assert_eq!(height(&h), height(&plain));
+}

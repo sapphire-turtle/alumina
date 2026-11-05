@@ -137,6 +137,14 @@ pub fn highlighted_job(
         ..LayoutJob::default()
     };
     job.wrap.max_width = wrap_width;
+    if code.is_empty() {
+        // As `LayoutJob::simple`: an empty text still has a section, for its row height.
+        job.sections.push(LayoutSection {
+            leading_space: 0.0,
+            byte_range: ByteIndex(0)..ByteIndex(0),
+            format: TextFormat::simple(font.clone(), color),
+        });
+    }
     let mut start = 0;
     while start < code.len() {
         let run = colors[start];
@@ -167,6 +175,13 @@ mod tests {
             &CodeTheme::default(),
             100.0,
         )
+    }
+
+    #[test]
+    fn empty_code_keeps_one_section() {
+        let j = job("", &[]);
+        assert_eq!(j.sections.len(), 1);
+        assert_eq!(j.sections[0].format.color, Color32::WHITE);
     }
 
     #[test]
