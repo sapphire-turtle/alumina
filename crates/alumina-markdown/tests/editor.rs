@@ -1224,13 +1224,6 @@ mod highlighting {
         assert_eq!(t.asked.lock().unwrap().len(), 2);
     }
 
-    fn assert_auto<T: Send + Sync + std::panic::RefUnwindSafe>() {}
-
-    #[test]
-    fn the_editor_is_send_sync_and_ref_unwind_safe() {
-        assert_auto::<MarkdownEditor<'static>>();
-    }
-
     #[test]
     fn no_highlighter_looks_as_before() {
         let src = "# t\n---\na: 1\n---\n```rust\nfn\n```\n> ```rust\n> fn\n> ```\n";

@@ -65,10 +65,9 @@ impl TokenKind {
 /// Finds the tokens of a piece of code. The app implements it with whatever it likes (a
 /// regex, `syntect`, tree-sitter).
 ///
-/// `Send`, `Sync` and `RefUnwindSafe` are required so that an editor holding a
-/// `&dyn Highlighter` stays `Send`, `Sync` and `RefUnwindSafe`, as it is without one. A
-/// highlighter that keeps a cache uses a `Mutex` or atomics, not a `RefCell` or `Cell`.
-pub trait Highlighter: Send + Sync + std::panic::RefUnwindSafe {
+/// It is called through `&self`: a highlighter that keeps a cache holds it in a `RefCell`
+/// or a `Mutex`.
+pub trait Highlighter {
     /// The tokens of `code` written in `language` (a name such as `"rust"`, as the app
     /// uses it), as byte ranges of `code`; `None` if the language is not known, which
     /// leaves the code plain.

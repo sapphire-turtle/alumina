@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - *(alumina-markdown)* a document starting with `---` ... `---` is now read as front matter, where it was a thematic break and a setext heading
 - *(alumina-markdown)* depends on alumina-code, whose `Highlighter`, `TokenKind` and `CodeTheme` it re-exports
+- *(alumina-markdown)* **breaking:** `MarkdownEditor` is no longer `Send`, `Sync` or `RefUnwindSafe`, as it can hold a `&dyn Highlighter`
 
 ### Added
 

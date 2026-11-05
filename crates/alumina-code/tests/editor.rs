@@ -379,10 +379,3 @@ fn empty_text_keeps_its_row_height() {
     assert!(height(&h) > 0.0);
     assert_eq!(height(&h), height(&plain));
 }
-
-fn assert_auto<T: Send + Sync + std::panic::RefUnwindSafe>() {}
-
-#[test]
-fn the_editor_is_send_sync_and_ref_unwind_safe() {
-    assert_auto::<CodeEditor<'static>>();
-}
