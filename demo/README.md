@@ -28,6 +28,12 @@ corundum-framework's demo, whose window the apps share.
 `assets/app-icon.svg`, alumina's mark (`docs/logo.svg`) in the faceted brand blue: the
 window's, and the Windows executable's through `build.rs`.
 
+`assets/app-icon-macos.svg` is macOS's: the same mark on a light grey tile (`#F1F4F7`, the
+sapphire-turtle avatar's) drawn on the macOS icon grid, as macOS sets a mark that does not
+fill the grid on a plate of its own. It is for the app bundle the demo's launcher puts in
+`~/Applications`, which takes it through `LauncherSpec::macos_icon_svg` once the demo is on
+a corundum-framework release that has the field.
+
 ## CI
 
 CI builds and tests the demo on the desktops.
