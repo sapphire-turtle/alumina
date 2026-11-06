@@ -189,7 +189,7 @@ dependencies = [
  "alumina-markdown",
  "corundum-framework-build",
  "corundum-framework-gui",
- "corundum-framework-platform",
+ "corundum-framework-platform 0.7.0",
  "syntect",
  "tracing",
  "tracing-subscriber",
@@ -798,17 +798,17 @@ version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0247fc5751c8b54f7c0b8dd43a6f0b1511c05919a2103c10b61352e921c4c0ab"
 dependencies = [
- "corundum-framework-platform",
+ "corundum-framework-platform 0.7.0",
  "winresource",
 ]
 
 [[package]]
 name = "corundum-framework-gui"
-version = "0.7.0"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "92f9840be85d8d9bc6d203e8cb044012a2fb1885cbac20dc41a407f6f2ac55ff"
+checksum = "cd85033545220316fa6cd28adafe6cfaac9c9d09e9b2ff7b1f5a793f8fd01a67"
 dependencies = [
- "corundum-framework-platform",
+ "corundum-framework-platform 0.8.0",
  "eframe",
  "egui",
  "egui_extras",
@@ -833,6 +833,23 @@ name = "corundum-framework-platform"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "63482a44c3905280262230d715538b56ac5d1644d391cfa43bc72ee0fb77ac32"
+dependencies = [
+ "dirs",
+ "jni",
+ "ndk-context",
+ "objc2-foundation 0.3.2",
+ "resvg 0.49.0",
+ "sys-locale",
+ "tracing",
+ "unic-langid",
+ "windows",
+]
+
+[[package]]
+name = "corundum-framework-platform"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "808a68b2be911cfa2059c13314820203b68197afde37182fef585a8abdc85df0"
 dependencies = [
  "dirs",
  "jni",

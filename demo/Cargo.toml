@@ -20,7 +20,7 @@ alumina-code = { workspace = true }
 alumina-datetime = { workspace = true }
 alumina-markdown = { workspace = true }
 # The window is corundum's, as in the apps: it finds a CJK font for the Japanese labels.
-corundum-framework-gui = { version = "0.7.0", default-features = false, features = ["eframe"] }
+corundum-framework-gui = { version = "0.8.0", default-features = false, features = ["eframe"] }
 # `LauncherSpec`, which gives the window its icon (and the app its entry in the app menu);
 # the version corundum-framework-gui is built with.
 corundum-framework-platform = "0.7.0"
