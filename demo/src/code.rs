@@ -2,7 +2,7 @@
 
 use crate::highlight::DemoHighlighter;
 use alumina_code::{CodeEditor, Indent};
-use corundum_framework_gui::egui;
+use eframe::egui;
 
 const JSON: &str = include_str!("code-sample.json");
 const YAML: &str = include_str!("code-sample.yaml");

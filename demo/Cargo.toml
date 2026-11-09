@@ -19,16 +19,19 @@ path = "src/main.rs"
 alumina-code = { workspace = true }
 alumina-datetime = { workspace = true }
 alumina-markdown = { workspace = true }
-# The window is corundum's, as in the apps: it finds a CJK font for the Japanese labels.
-corundum-framework-gui = { version = "0.7.0", default-features = false, features = ["eframe"] }
-# `LauncherSpec`, which gives the window its icon (and the app its entry in the app menu);
-# the version corundum-framework-gui is built with.
-corundum-framework-platform = "0.7.0"
+# The window, on the egui the widgets use. Its default `system_fonts` finds a system font
+# for the Japanese labels, which egui's own fonts lack.
+eframe = "0.37"
 # The Rust highlighter: syntect's bundled syntaxes, with the pure-Rust regex engine.
 syntect = { version = "5", default-features = false, features = ["default-syntaxes", "regex-fancy"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["fmt", "env-filter"] }
 
-# build.rs: embeds assets/app-icon.svg as the icon of the Windows executable.
+
+# build.rs: the icon, from assets/app-icon.svg alone (no PNG in the repository).
 [build-dependencies]
-corundum-framework-build = "0.7.0"
+# Embeds the icon in the Windows executable. The only corundum crate here, and only at
+# build time: nothing of it is linked into the demo.
+corundum-framework-build = "0.11.0"
+# Renders the window's icon. The version corundum-framework-build renders with.
+resvg = { version = "0.49", default-features = false }

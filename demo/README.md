@@ -12,21 +12,23 @@ workspace member, built and tested with the rest, and never published.
 Below 600 points wide (a narrow window, as a phone's) the settings fold away above the widgets and the parts
 stack.
 
-The window is corundum-framework-gui's, which finds a CJK font for the Japanese words.
-The widget crates themselves depend on neither corundum nor a window.
+The window is eframe's, whose `system_fonts` finds a system font for the Japanese words.
+The widget crates themselves depend on no window; nothing here, the demo included,
+links corundum-framework, which these crates were split out of.
 
 ```sh
 cargo run -p alumina-demo
 ```
 
 It is for the desktops only, to stay small. The widgets are built and tested for iOS and
-Android in Mobile CI; how they feel under a finger is tried in the apps, or in
-corundum-framework's demo, whose window the apps share.
+Android in Mobile CI; how they feel under a finger is tried in the apps that use them.
 
 ## The icon
 
-`assets/app-icon.svg`, alumina's mark (`docs/logo.svg`) in the faceted brand blue: the
-window's, and the Windows executable's through `build.rs`.
+`assets/app-icon.svg`, alumina's mark (`docs/logo.svg`) in the faceted brand blue, is the
+only icon file: `build.rs` renders it for the window, and embeds it in the Windows
+executable through corundum-framework-build. That build-time helper is the one corundum
+crate here; nothing of corundum is linked into the demo.
 
 `assets/app-icon-macos.svg` is macOS's: the same mark on a light grey tile (`#F1F4F7`, the
 sapphire-turtle avatar's) drawn on the macOS icon grid, as macOS sets a mark that does not

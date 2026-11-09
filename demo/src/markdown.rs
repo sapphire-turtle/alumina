@@ -2,7 +2,7 @@
 
 use crate::highlight::DemoHighlighter;
 use alumina_markdown::{MarkdownEditor, MarkdownToolbar};
-use corundum_framework_gui::egui;
+use eframe::egui;
 
 const SAMPLE: &str = include_str!("markdown-sample.md");
 

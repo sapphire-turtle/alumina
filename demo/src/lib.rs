@@ -7,7 +7,7 @@ mod datetime;
 mod highlight;
 mod markdown;
 
-use corundum_framework_gui::egui;
+use eframe::egui;
 
 /// Below this width the pages stack their parts, as a phone's would.
 pub const NARROW: f32 = 600.0;
@@ -38,8 +38,8 @@ impl Default for Demo {
     }
 }
 
-impl corundum_framework_gui::eframe::App for Demo {
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut corundum_framework_gui::eframe::Frame) {
+impl eframe::App for Demo {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.pages(ui);
     }
 }
@@ -64,27 +64,30 @@ impl Demo {
     }
 }
 
-/// The demo's entry in the desktop's app menu, and the window's id and icon. A `cargo run`
-/// puts no entry there; the icon it still gives the window.
-const LAUNCHER: corundum_framework_platform::launcher::LauncherSpec =
-    corundum_framework_platform::launcher::LauncherSpec {
-        id: "alumina-demo",
-        name: "Alumina Demo",
-        description: "Try alumina's egui widgets",
-        category: "Development",
-        icon_svg: include_bytes!("../assets/app-icon.svg"),
-        bundle_prefix: "org.sapphire-turtle",
-    };
+/// The window: its title, size, and id and icon (the id lets a Wayland desktop match the
+/// window to its icon). Japanese labels need no font set up here: eframe's `system_fonts`
+/// finds a system font for glyphs egui's own fonts lack.
+fn native_options() -> eframe::NativeOptions {
+    let viewport = egui::ViewportBuilder::default()
+        .with_title("alumina demo")
+        .with_app_id("alumina-demo")
+        .with_inner_size([960.0, 680.0])
+        .with_min_inner_size([320.0, 400.0])
+        .with_icon(icon());
+    eframe::NativeOptions {
+        viewport,
+        ..Default::default()
+    }
+}
 
-fn window_options() -> corundum_framework_gui::window::WindowOptions {
-    corundum_framework_gui::window::WindowOptions::new("alumina demo")
-        .launcher(LAUNCHER)
-        .inner_size([960.0, 680.0])
-        .min_inner_size([320.0, 400.0])
-        // The Japanese labels need a CJK font, which egui does not bundle.
-        .fonts(|ctx| {
-            corundum_framework_gui::fonts::install_system_cjk_fallback(ctx);
-        })
+/// The window's icon, rendered from assets/app-icon.svg by build.rs.
+fn icon() -> egui::IconData {
+    let size: u32 = env!("ICON_SIZE").parse().expect("build.rs sets ICON_SIZE");
+    egui::IconData {
+        rgba: include_bytes!(concat!(env!("OUT_DIR"), "/app-icon.rgba")).to_vec(),
+        width: size,
+        height: size,
+    }
 }
 
 /// Log to standard error, `RUST_LOG` choosing what.
@@ -97,8 +100,27 @@ pub fn init_logging() {
 }
 
 /// Open the demo's window and run it until it closes.
-pub fn run() -> corundum_framework_gui::eframe::Result<()> {
+pub fn run() -> eframe::Result<()> {
     init_logging();
     tracing::info!("alumina demo: start");
-    corundum_framework_gui::window::run(window_options(), |_cc| Box::new(Demo::default()))
+    eframe::run_native(
+        "alumina-demo",
+        native_options(),
+        Box::new(|_cc| Ok(Box::new(Demo::default()))),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn the_icon_is_a_full_square_with_the_mark_drawn() {
+        let icon = super::icon();
+        assert_eq!(icon.width, icon.height);
+        assert_eq!(icon.rgba.len(), (icon.width * icon.height * 4) as usize);
+        assert!(icon.rgba.chunks(4).any(|p| p[3] == 255), "nothing is drawn");
+        assert!(
+            icon.rgba.chunks(4).any(|p| p[3] == 0),
+            "no transparent corner"
+        );
+    }
 }
