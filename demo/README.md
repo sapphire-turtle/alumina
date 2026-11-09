@@ -25,16 +25,17 @@ Android in Mobile CI; how they feel under a finger is tried in the apps that use
 
 ## The icon
 
-`assets/app-icon.svg`, alumina's mark (`docs/logo.svg`) in the faceted brand blue, is the
-only icon file: `build.rs` renders it for the window, and embeds it in the Windows
-executable through corundum-framework-build. That build-time helper is the one corundum
-crate here; nothing of corundum is linked into the demo.
+`assets/app-icon.svg`, alumina's mark (`docs/logo.svg`) in the faceted brand blue:
+`build.rs` renders it for the window, and embeds it in the Windows executable through
+corundum-framework-build. That build-time helper is the one corundum crate here; nothing
+of corundum is linked into the demo.
 
 `assets/app-icon-macos.svg` is macOS's: the same mark on a light grey tile (`#F1F4F7`, the
 sapphire-turtle avatar's) drawn on the macOS icon grid, as macOS sets a mark that does not
-fill the grid on a plate of its own. It is for the app bundle the demo's launcher puts in
-`~/Applications`, which takes it through `LauncherSpec::macos_icon_svg` once the demo is on
-a corundum-framework release that has the field.
+fill the grid on a plate of its own. On macOS `build.rs` renders it for the window instead,
+which eframe also gives to the Dock.
+
+Both are rendered at build time, so the repository keeps no PNG.
 
 ## CI
 
