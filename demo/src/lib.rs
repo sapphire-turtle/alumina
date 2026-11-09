@@ -80,7 +80,8 @@ fn native_options() -> eframe::NativeOptions {
     }
 }
 
-/// The window's icon, rendered from assets/app-icon.svg by build.rs.
+/// The window's icon, rendered by build.rs (from assets/app-icon-macos.svg on macOS,
+/// assets/app-icon.svg elsewhere).
 fn icon() -> egui::IconData {
     let size: u32 = env!("ICON_SIZE").parse().expect("build.rs sets ICON_SIZE");
     egui::IconData {
