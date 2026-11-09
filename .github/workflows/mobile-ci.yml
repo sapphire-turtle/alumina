@@ -10,7 +10,7 @@ name: Mobile CI
 # only the docs, and a required check that never runs would leave them pending.
 on:
   pull_request:
-    # Cargo.lock too: a dependency bump (egui, corundum) can break a mobile build.
+    # Cargo.lock too: a dependency bump (egui, say) can break a mobile build.
     paths:
       - crates/**
       - Cargo.toml

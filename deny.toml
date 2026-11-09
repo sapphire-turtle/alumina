@@ -23,7 +23,7 @@ yanked = "warn"
 ignore = [
     # Unmaintained, with no vulnerability and no safe upgrade. All five reach only the demo
     # app (its window and its highlighter), never the libraries.
-    { id = "RUSTSEC-2026-0192", reason = "ttf-parser is unmaintained (author-declared); the demo's window reads font files with it through corundum-framework-gui, and winit's Wayland decorations through ab_glyph. The suggested alternative (skrifa) is a different font stack." },
+    { id = "RUSTSEC-2026-0192", reason = "ttf-parser is unmaintained (author-declared); the demo's window reaches it through winit's Wayland decorations (sctk-adwaita > ab_glyph). The suggested alternative (skrifa) is a different font stack." },
     { id = "RUSTSEC-2026-0370", reason = "zvariant is unmaintained as a standalone crate (merged into zbus 6). Reached via eframe > egui-winit > accesskit_winit > accesskit_unix (Linux screen reader support), whose latest release still pins zbus ^5.19 and atspi ^0.29. Drop when accesskit_unix moves to zbus 6." },
     { id = "RUSTSEC-2026-0371", reason = "zbus_names is unmaintained as a standalone crate (merged into zbus 6). Same path and reason as RUSTSEC-2026-0370." },
     { id = "RUSTSEC-2026-0372", reason = "zvariant_derive is unmaintained as a standalone crate (merged into zbus 6). Same path and reason as RUSTSEC-2026-0370." },

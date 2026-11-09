@@ -19,7 +19,7 @@ jobs:
         cargo test -p alumina-code --features serde --locked
 
   # The widget crates are for any egui app, with or without a window: none of them may
-  # bring eframe or corundum (only the demo does).
+  # bring eframe (only the demo does) or corundum (nothing here does).
   libraries-without-a-window:
     needs: ci
     runs-on: ubuntu-latest
@@ -36,3 +36,13 @@ jobs:
               exit 1
             fi
           done
+      # alumina is what was split out of corundum-framework, so nothing here, the demo
+      # included, may link it. The demo's build.rs alone may use corundum-framework-build
+      # (the icon); build dependencies are left out of this tree.
+      - name: corundum is linked into nothing, the demo included
+        run: |
+          cargo tree --locked --target all --workspace -e normal > tree.txt
+          if grep -qE ' corundum-framework[a-z-]* v' tree.txt; then
+            echo "corundum is linked into the workspace"
+            exit 1
+          fi

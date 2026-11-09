@@ -10,7 +10,7 @@ use alumina_datetime::{
     DateTimePickerButton, Drum, Labels, Period, PeriodKind, PeriodPickerButton, TimeDrum,
     TimeFormat, TimePickerButton,
 };
-use corundum_framework_gui::egui;
+use eframe::egui;
 
 pub struct DateTimeDemo {
     // Shared settings.
