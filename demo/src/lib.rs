@@ -118,6 +118,9 @@ mod tests {
         assert_eq!(icon.width, icon.height);
         assert_eq!(icon.rgba.len(), (icon.width * icon.height * 4) as usize);
         assert!(icon.rgba.chunks(4).any(|p| p[3] == 255), "nothing is drawn");
-        assert!(icon.rgba.chunks(4).any(|p| p[3] == 0), "no transparent corner");
+        assert!(
+            icon.rgba.chunks(4).any(|p| p[3] == 0),
+            "no transparent corner"
+        );
     }
 }
