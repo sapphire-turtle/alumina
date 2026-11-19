@@ -2,7 +2,8 @@
 
 use std::sync::{Arc, LazyLock};
 
-use chrono::{Local, NaiveDate, Weekday};
+use jiff::ZonedDateTime;
+use jiff::civil::{Date, Weekday};
 
 use crate::{CalendarIcons, PeriodKind};
 
@@ -95,7 +96,7 @@ impl Labels {
     }
 
     pub fn weekday_short(&self, day: Weekday) -> &str {
-        &self.weekdays_short[day.num_days_from_monday() as usize]
+        &self.weekdays_short[day.to_monday_zero_offset() as usize]
     }
 
     pub fn kind(&self, kind: PeriodKind) -> &str {
@@ -125,7 +126,7 @@ pub struct CalendarConfig {
     /// The side of a day's cell, in points.
     pub cell_size: f32,
     /// Today, for its mark and the Today button; `None` reads the local clock.
-    pub today: Option<NaiveDate>,
+    pub today: Option<Date>,
 }
 
 impl Default for CalendarConfig {
@@ -133,7 +134,7 @@ impl Default for CalendarConfig {
         Self {
             labels: ENGLISH.clone(),
             icons: Arc::default(),
-            first_weekday: Weekday::Mon,
+            first_weekday: Weekday::Monday,
             show_week_numbers: false,
             cell_size: 28.0,
             today: None,
@@ -168,17 +169,17 @@ impl CalendarConfig {
         self
     }
 
-    pub fn today(mut self, today: NaiveDate) -> Self {
+    pub fn today(mut self, today: Date) -> Self {
         self.today = Some(today);
         self
     }
 
-    pub(crate) fn today_or_local(&self) -> NaiveDate {
-        self.today.unwrap_or_else(|| Local::now().date_naive())
+    pub(crate) fn today_or_local(&self) -> Date {
+        self.today.unwrap_or_else(|| ZonedDateTime::now().date())
     }
 
     /// Whether the week-number column is drawn: ISO numbers only fit Monday weeks.
     pub(crate) fn week_numbers_drawn(&self) -> bool {
-        self.show_week_numbers && self.first_weekday == Weekday::Mon
+        self.show_week_numbers && self.first_weekday == Weekday::Monday
     }
 }

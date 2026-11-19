@@ -3,7 +3,7 @@
 //! With `ALUMINA_RENDER_DIR` set, each test also renders its window there as a PNG (on the
 //! GPU, or a software Vulkan such as lavapipe), for looking at.
 
-use alumina_datetime::chrono::{NaiveDate, NaiveDateTime, NaiveTime};
+use alumina_datetime::jiff::civil::{Date, DateTime, Time};
 use alumina_datetime::{
     Calendar, CalendarConfig, CalendarIcons, CalendarState, CalendarView, DatePickerButton,
     DateTimePicker, DateTimePickerButton, Drum, Period, PeriodKind, PeriodPickerButton, TimeDrum,
@@ -12,8 +12,8 @@ use alumina_datetime::{
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable as _;
 
-fn d(y: i32, m: u32, day: u32) -> NaiveDate {
-    NaiveDate::from_ymd_opt(y, m, day).unwrap()
+fn d(y: i16, m: i8, day: i8) -> Date {
+    Date::new(y, m, day).unwrap()
 }
 
 fn config() -> CalendarConfig {
@@ -189,10 +189,10 @@ fn drum_rolls_with_keys_and_clicks() {
 #[test]
 fn time_drum_follows_the_value() {
     let mut h = Harness::builder().with_size([260.0, 200.0]).build_ui_state(
-        |ui, t: &mut NaiveTime| {
+        |ui, t: &mut Time| {
             ui.add(TimeDrum::new("t", t).hour12(true));
         },
-        NaiveTime::from_hms_opt(21, 35, 0).unwrap(),
+        Time::new(21, 35, 0, 0).unwrap(),
     );
     h.run();
     h.get_by_label("09");
@@ -204,7 +204,7 @@ fn time_drum_follows_the_value() {
 #[test]
 fn date_button_opens_a_calendar_and_closes_on_a_pick() {
     let mut h = Harness::builder().with_size([340.0, 420.0]).build_ui_state(
-        |ui, date: &mut Option<NaiveDate>| {
+        |ui, date: &mut Option<Date>| {
             ui.add(DatePickerButton::new("date", date).config(config()));
         },
         Some(d(2026, 11, 3)),
@@ -239,10 +239,10 @@ fn period_button_takes_typed_text() {
 
 #[test]
 fn datetime_picker_stacks_on_a_narrow_screen() {
-    let at = d(2026, 11, 3).and_hms_opt(9, 30, 0).unwrap();
+    let at = d(2026, 11, 3).at(9, 30, 0, 0);
     for (width, name) in [(600.0, "datetime_wide"), (300.0, "datetime_narrow")] {
         let mut h = Harness::builder().with_size([width, 520.0]).build_ui_state(
-            |ui, (dt, state): &mut (NaiveDateTime, CalendarState)| {
+            |ui, (dt, state): &mut (DateTime, CalendarState)| {
                 ui.add(DateTimePicker::new("dt", dt, state).config(config()));
             },
             (at, CalendarState::new(at.date())),
@@ -425,10 +425,10 @@ fn now_button(icons: CalendarIcons, datetime: bool) -> (Vec<String>, f32) {
             record(&seen2, ui.ctx());
             let config = config().icons(icons.clone());
             if datetime {
-                let mut v = d(2026, 11, 3).and_hms_opt(9, 30, 0).unwrap();
+                let mut v = d(2026, 11, 3).at(9, 30, 0, 0);
                 ui.add(DateTimePickerButton::new("dt", &mut v).config(config));
             } else {
-                let mut v = NaiveTime::from_hms_opt(9, 30, 0).unwrap();
+                let mut v = Time::new(9, 30, 0, 0).unwrap();
                 ui.add(TimePickerButton::new("t", &mut v).config(config));
             }
         });

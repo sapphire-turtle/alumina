@@ -3,9 +3,9 @@
 use std::fmt;
 use std::str::FromStr;
 
-use chrono::{Datelike as _, Days, NaiveDate, Weekday};
+use jiff::civil::{Date, ISOWeekDate, Weekday};
 
-use crate::calc::{days_in_month, week_start};
+use crate::calc::{add_days, days_in_month, week_start, ymd};
 
 /// What a [`Period`] spans; also what a calendar picks (see [`Calendar`](crate::Calendar)).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -44,10 +44,10 @@ impl PeriodKind {
 /// A week starting on another day than Monday has no ISO name and is written as its range.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Period {
-    Day(NaiveDate),
+    Day(Date),
     /// The seven days from `start`, the first day of the week.
     Week {
-        start: NaiveDate,
+        start: Date,
     },
     Month {
         year: i32,
@@ -56,14 +56,14 @@ pub enum Period {
     Year(i32),
     /// From `start` to `end`, both included; `start <= end` (see [`Period::range`]).
     Range {
-        start: NaiveDate,
-        end: NaiveDate,
+        start: Date,
+        end: Date,
     },
 }
 
 impl Period {
     /// The week `date` falls in, weeks starting on `first`.
-    pub fn week_of(date: NaiveDate, first: Weekday) -> Self {
+    pub fn week_of(date: Date, first: Weekday) -> Self {
         Period::Week {
             start: week_start(date, first),
         }
@@ -71,19 +71,22 @@ impl Period {
 
     /// The ISO week `week` of ISO year `year`, from its Monday.
     pub fn iso_week(year: i32, week: u32) -> Option<Self> {
-        NaiveDate::from_isoywd_opt(year, week, Weekday::Mon).map(|start| Period::Week { start })
+        let year = i16::try_from(year).ok()?;
+        let week = i8::try_from(week).ok()?;
+        let start = ISOWeekDate::new(year, week, Weekday::Monday).ok()?.date();
+        Some(Period::Week { start })
     }
 
     /// The month `date` falls in.
-    pub fn month_of(date: NaiveDate) -> Self {
+    pub fn month_of(date: Date) -> Self {
         Period::Month {
-            year: date.year(),
-            month: date.month(),
+            year: i32::from(date.year()),
+            month: date.month() as u32,
         }
     }
 
     /// The days from `a` to `b` in whichever order they come.
-    pub fn range(a: NaiveDate, b: NaiveDate) -> Self {
+    pub fn range(a: Date, b: Date) -> Self {
         Period::Range {
             start: a.min(b),
             end: a.max(b),
@@ -92,12 +95,12 @@ impl Period {
 
     /// The period of `kind` that contains `date` (for a range, `date` alone); weeks start on
     /// `first`.
-    pub fn containing(kind: PeriodKind, date: NaiveDate, first: Weekday) -> Self {
+    pub fn containing(kind: PeriodKind, date: Date, first: Weekday) -> Self {
         match kind {
             PeriodKind::Day => Period::Day(date),
             PeriodKind::Week => Period::week_of(date, first),
             PeriodKind::Month => Period::month_of(date),
-            PeriodKind::Year => Period::Year(date.year()),
+            PeriodKind::Year => Period::Year(i32::from(date.year())),
             PeriodKind::Range => Period::range(date, date),
         }
     }
@@ -113,56 +116,54 @@ impl Period {
     }
 
     /// The first day.
-    pub fn first_day(&self) -> NaiveDate {
+    pub fn first_day(&self) -> Date {
         match *self {
             Period::Day(d) => d,
             Period::Week { start } | Period::Range { start, .. } => start,
-            Period::Month { year, month } => {
-                NaiveDate::from_ymd_opt(year, month, 1).unwrap_or(NaiveDate::MIN)
-            }
-            Period::Year(year) => NaiveDate::from_ymd_opt(year, 1, 1).unwrap_or(NaiveDate::MIN),
+            Period::Month { year, month } => ymd(year, month, 1).unwrap_or(Date::MIN),
+            Period::Year(year) => ymd(year, 1, 1).unwrap_or(Date::MIN),
         }
     }
 
     /// The last day, included.
-    pub fn last_day(&self) -> NaiveDate {
+    pub fn last_day(&self) -> Date {
         match *self {
             Period::Day(d) => d,
-            Period::Week { start } => start
-                .checked_add_days(Days::new(6))
-                .unwrap_or(NaiveDate::MAX),
+            Period::Week { start } => add_days(start, 6),
             Period::Range { end, .. } => end,
             Period::Month { year, month } => {
-                NaiveDate::from_ymd_opt(year, month, days_in_month(year, month))
-                    .unwrap_or(NaiveDate::MAX)
+                ymd(year, month, days_in_month(year, month)).unwrap_or(Date::MAX)
             }
-            Period::Year(year) => NaiveDate::from_ymd_opt(year, 12, 31).unwrap_or(NaiveDate::MAX),
+            Period::Year(year) => ymd(year, 12, 31).unwrap_or(Date::MAX),
         }
     }
 
-    pub fn contains(&self, date: NaiveDate) -> bool {
+    pub fn contains(&self, date: Date) -> bool {
         self.first_day() <= date && date <= self.last_day()
     }
 
     /// The number of days.
     pub fn len_days(&self) -> u64 {
-        (self.last_day() - self.first_day()).num_days() as u64 + 1
+        self.first_day()
+            .until(self.last_day())
+            .map_or(0, |span| span.get_days() as u64)
+            + 1
     }
 }
 
 impl fmt::Display for Period {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
-            Period::Day(d) => write!(f, "{}", d.format("%Y-%m-%d")),
-            Period::Week { start } if start.weekday() == Weekday::Mon => {
-                let w = start.iso_week();
+            Period::Day(d) => write!(f, "{}", d.strftime(DAY_FMT)),
+            Period::Week { start } if start.weekday() == Weekday::Monday => {
+                let w = start.iso_week_date();
                 write!(f, "{}-W{:02}", w.year(), w.week())
             }
             Period::Week { .. } | Period::Range { .. } => write!(
                 f,
                 "{}..{}",
-                self.first_day().format("%Y-%m-%d"),
-                self.last_day().format("%Y-%m-%d")
+                self.first_day().strftime(DAY_FMT),
+                self.last_day().strftime(DAY_FMT)
             ),
             Period::Month { year, month } => write!(f, "{year:04}-{month:02}"),
             Period::Year(year) => write!(f, "{year:04}"),
@@ -222,16 +223,18 @@ impl FromStr for Period {
     }
 }
 
-fn parse_day(s: &str) -> Option<NaiveDate> {
-    NaiveDate::parse_from_str(s, "%Y-%m-%d").ok()
+const DAY_FMT: &str = "%Y-%m-%d";
+
+fn parse_day(s: &str) -> Option<Date> {
+    Date::strptime(DAY_FMT, s).ok()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn d(y: i32, m: u32, day: u32) -> NaiveDate {
-        NaiveDate::from_ymd_opt(y, m, day).unwrap()
+    fn d(y: i16, m: i8, day: i8) -> Date {
+        Date::new(y, m, day).unwrap()
     }
 
     #[test]
@@ -288,14 +291,14 @@ mod tests {
         assert_eq!(Period::Year(2026).len_days(), 365);
         // The ISO year of 2027-01-01 (a Friday) is 2026.
         assert_eq!(
-            Period::week_of(d(2027, 1, 1), Weekday::Mon).to_string(),
+            Period::week_of(d(2027, 1, 1), Weekday::Monday).to_string(),
             "2026-W53"
         );
     }
 
     #[test]
     fn sunday_weeks_are_written_as_ranges() {
-        let p = Period::week_of(d(2026, 11, 3), Weekday::Sun);
+        let p = Period::week_of(d(2026, 11, 3), Weekday::Sunday);
         assert_eq!(p.to_string(), "2026-11-01..2026-11-07");
         assert_eq!(p.len_days(), 7);
     }
@@ -304,7 +307,7 @@ mod tests {
     fn containing() {
         let day = d(2026, 11, 3);
         for kind in PeriodKind::ALL {
-            let p = Period::containing(kind, day, Weekday::Mon);
+            let p = Period::containing(kind, day, Weekday::Monday);
             assert_eq!(p.kind(), kind);
             assert!(p.contains(day));
         }

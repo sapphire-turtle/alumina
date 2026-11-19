@@ -2,9 +2,8 @@
 
 use std::sync::Arc;
 
-use alumina_datetime::chrono::{
-    Datelike as _, Local, NaiveDate, NaiveDateTime, NaiveTime, Weekday,
-};
+use alumina_datetime::jiff::ZonedDateTime;
+use alumina_datetime::jiff::civil::{Date, DateTime, Time, Weekday};
 use alumina_datetime::{
     Calendar, CalendarConfig, CalendarState, DatePickerButton, DateTimePicker,
     DateTimePickerButton, Drum, Labels, Period, PeriodKind, PeriodPickerButton, TimeDrum,
@@ -29,29 +28,26 @@ pub struct DateTimeDemo {
 
     // Drums.
     drum_value: i32,
-    time: NaiveTime,
+    time: Time,
 
     // The calendar beside drums.
-    datetime: NaiveDateTime,
+    datetime: DateTime,
     datetime_state: CalendarState,
 
     // Buttons.
-    date: Option<NaiveDate>,
+    date: Option<Date>,
     period: Option<Period>,
-    button_time: NaiveTime,
-    button_datetime: NaiveDateTime,
+    button_time: Time,
+    button_datetime: DateTime,
 }
 
 impl Default for DateTimeDemo {
     fn default() -> Self {
-        let now = Local::now().naive_local();
-        let now = now
-            .date()
-            .and_hms_opt(now.time().hour(), now.time().minute(), 0)
-            .unwrap_or(now);
+        let now = ZonedDateTime::now().datetime();
+        let now = now.date().at(now.hour(), now.minute(), 0, 0);
         Self {
             japanese: false,
-            first_weekday: Weekday::Mon,
+            first_weekday: Weekday::Monday,
             week_numbers: true,
             cell_size: 28.0,
             badges: true,
@@ -71,8 +67,6 @@ impl Default for DateTimeDemo {
         }
     }
 }
-
-use alumina_datetime::chrono::Timelike as _;
 
 /// The words in Japanese, as an app would hand over its translation.
 fn japanese() -> Labels {
@@ -101,8 +95,8 @@ fn japanese() -> Labels {
 }
 
 /// A made-up count of entries on a day, for the badges.
-fn fake_entries(d: NaiveDate) -> usize {
-    usize::from(d.ordinal().is_multiple_of(3) || d.day() == 1)
+fn fake_entries(d: Date) -> usize {
+    usize::from(d.day_of_year() % 3 == 0 || d.day() == 1)
 }
 
 impl DateTimeDemo {
@@ -159,8 +153,8 @@ impl DateTimeDemo {
         ui.checkbox(&mut self.japanese, "日本語の表示");
         ui.horizontal(|ui| {
             ui.label("Week starts on");
-            ui.selectable_value(&mut self.first_weekday, Weekday::Mon, "Mon");
-            ui.selectable_value(&mut self.first_weekday, Weekday::Sun, "Sun");
+            ui.selectable_value(&mut self.first_weekday, Weekday::Monday, "Mon");
+            ui.selectable_value(&mut self.first_weekday, Weekday::Sunday, "Sun");
         });
         ui.checkbox(&mut self.week_numbers, "Week numbers (Monday weeks)");
         ui.checkbox(&mut self.badges, "Entry dots");
@@ -194,7 +188,7 @@ impl DateTimeDemo {
     fn buttons(&mut self, ui: &mut egui::Ui) {
         ui.heading("Picker buttons");
         let config = self.config();
-        let badge: &dyn Fn(NaiveDate) -> usize = &fake_entries;
+        let badge: &dyn Fn(Date) -> usize = &fake_entries;
         egui::Grid::new("buttons")
             .num_columns(3)
             .spacing([12.0, 6.0])
@@ -248,7 +242,7 @@ impl DateTimeDemo {
                 .selection(self.calendar_value)
                 .config(config)
                 .show_clear(true);
-            let badge: &dyn Fn(NaiveDate) -> usize = &fake_entries;
+            let badge: &dyn Fn(Date) -> usize = &fake_entries;
             if self.badges {
                 cal = cal.day_badge(badge);
             }

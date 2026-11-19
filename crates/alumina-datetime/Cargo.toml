@@ -10,7 +10,7 @@ keywords = ["egui", "calendar", "date-picker", "time-picker", "gui"]
 categories = ["gui", "date-and-time"]
 
 [dependencies]
-chrono = { workspace = true }
+jiff = { workspace = true }
 egui = { workspace = true }
 
 [dev-dependencies]

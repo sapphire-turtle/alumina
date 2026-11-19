@@ -1,12 +1,12 @@
 //! A calendar that picks a day, a week, a month, a year or a range of days.
 
-use chrono::{Datelike as _, Days, NaiveDate};
 use egui::{
     Align2, CursorIcon, FontId, Id, IdSalt, Rect, Role, Sense, Stroke, StrokeKind, Ui, WidgetInfo,
     vec2,
 };
+use jiff::civil::Date;
 
-use crate::calc::{add_months, add_years, month_start, week_start, weekdays_from};
+use crate::calc::{add_days, add_months, add_years, month_start, week_start, weekdays_from};
 use crate::icons::small_button;
 use crate::{CalendarConfig, Period, PeriodKind};
 
@@ -47,16 +47,16 @@ impl CalendarView {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CalendarState {
     /// A day in the month (the year, in the years view) on show.
-    pub cursor: NaiveDate,
+    pub cursor: Date,
     pub view: CalendarView,
     pub kind: PeriodKind,
     /// The first end of a range picked so far.
-    pub anchor: Option<NaiveDate>,
+    pub anchor: Option<Date>,
 }
 
 impl CalendarState {
     /// The days of `cursor`'s month, picking days.
-    pub fn new(cursor: NaiveDate) -> Self {
+    pub fn new(cursor: Date) -> Self {
         Self {
             cursor,
             view: CalendarView::Days,
@@ -67,7 +67,7 @@ impl CalendarState {
 
     /// Opened on `period` (on `today` without one), picking `period`'s kind when it is one
     /// of `kinds`, else the first of `kinds`.
-    pub fn for_period(period: Option<&Period>, kinds: &[PeriodKind], today: NaiveDate) -> Self {
+    pub fn for_period(period: Option<&Period>, kinds: &[PeriodKind], today: Date) -> Self {
         let kind = period
             .map(Period::kind)
             .filter(|k| kinds.contains(k))
@@ -100,7 +100,7 @@ pub struct CalendarResponse {
 }
 
 /// The count of marks a day gets (entries on it, say); a dot is drawn above zero.
-pub type DayBadge<'a> = &'a dyn Fn(NaiveDate) -> usize;
+pub type DayBadge<'a> = &'a dyn Fn(Date) -> usize;
 
 /// A month's days in a grid, which zooms out to the months and the years.
 ///
@@ -327,9 +327,9 @@ fn heading(ui: &mut Ui, state: &mut CalendarState, config: &CalendarConfig, widt
         step(state, 1);
     }
 
-    let year = state.cursor.year();
+    let year = i32::from(state.cursor.year());
     let text = match state.view {
-        CalendarView::Days => format!("{} {year}", labels.month(state.cursor.month())),
+        CalendarView::Days => format!("{} {year}", labels.month(state.cursor.month() as u32)),
         CalendarView::Months => year.to_string(),
         CalendarView::Years => {
             let first = decade_start(year);
@@ -407,7 +407,7 @@ struct GridCtx<'s, 'a> {
     selection: Option<Period>,
     config: &'s CalendarConfig,
     day_badge: Option<DayBadge<'a>>,
-    today: NaiveDate,
+    today: Date,
     width: f32,
     picked: &'s mut Option<Period>,
 }
@@ -467,7 +467,7 @@ fn decade_start(year: i32) -> i32 {
     year - year.rem_euclid(10)
 }
 
-fn overlaps(p: Option<Period>, first: NaiveDate, last: NaiveDate) -> bool {
+fn overlaps(p: Option<Period>, first: Date, last: Date) -> bool {
     p.is_some_and(|p| p.first_day() <= last && first <= p.last_day())
 }
 
@@ -519,7 +519,7 @@ impl GridCtx<'_, '_> {
         }
 
         let grid_start = week_start(month_start(self.state.cursor), cfg.first_weekday);
-        let date_at = |r: usize, c: usize| grid_start + Days::new((r * 7 + c) as u64);
+        let date_at = |r: usize, c: usize| add_days(grid_start, (r * 7 + c) as i64);
 
         // The day under the pointer, for the hover preview of a week or a range.
         let hover_pos = ui
@@ -563,7 +563,7 @@ impl GridCtx<'_, '_> {
                     hovered: can_pick && resp.hovered(),
                     ..Default::default()
                 };
-                let text = format!("{:02}", week_first.iso_week().week());
+                let text = format!("{:02}", week_first.iso_week_date().week());
                 paint_cell(ui, cell_rect, &text, &look);
                 if can_pick && resp.clicked() {
                     *self.picked = Some(week);
@@ -580,7 +580,12 @@ impl GridCtx<'_, '_> {
                     .on_hover_cursor(CursorIcon::PointingHand);
                 let selected = self.selection.is_some_and(|p| p.contains(date));
                 resp.widget_info(|| {
-                    WidgetInfo::selected(Role::Button, true, selected, date.format("%Y-%m-%d"))
+                    WidgetInfo::selected(
+                        Role::Button,
+                        true,
+                        selected,
+                        date.strftime("%Y-%m-%d").to_string(),
+                    )
                 });
                 let look = CellLook {
                     in_month: date.month() == self.state.cursor.month(),
@@ -599,7 +604,7 @@ impl GridCtx<'_, '_> {
         }
     }
 
-    fn click_day(&mut self, date: NaiveDate) {
+    fn click_day(&mut self, date: Date) {
         let first = self.config.first_weekday;
         *self.picked = match self.state.kind {
             PeriodKind::Range => match self.state.anchor.take() {
@@ -648,7 +653,7 @@ impl GridCtx<'_, '_> {
     }
 
     fn months(&mut self, ui: &mut Ui) {
-        let year = self.state.cursor.year();
+        let year = i32::from(self.state.cursor.year());
         let labels = self.config.labels.clone();
         let today = self.today;
         let selection = self.selection;
@@ -677,14 +682,19 @@ impl GridCtx<'_, '_> {
                 *self.picked = Some(m);
             } else {
                 let day = self.state.cursor.day().min(m.last_day().day());
-                self.state.cursor = m.first_day().with_day(day).unwrap_or(m.first_day());
+                self.state.cursor = m
+                    .first_day()
+                    .with()
+                    .day(day)
+                    .build()
+                    .unwrap_or(m.first_day());
                 self.state.view = CalendarView::Days;
             }
         }
     }
 
     fn years(&mut self, ui: &mut Ui) {
-        let cursor = self.state.cursor.year();
+        let cursor = i32::from(self.state.cursor.year());
         // The decade, with a year either side.
         let first = decade_start(cursor) - 1;
         let today = self.today;

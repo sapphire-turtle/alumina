@@ -4,11 +4,11 @@
 use std::ops::RangeInclusive;
 use std::sync::Arc;
 
-use chrono::{NaiveTime, Timelike as _};
 use egui::{
     Align2, FontId, IdSalt, Rect, Response, Role, Sense, Stroke, StrokeKind, Ui, Widget,
     WidgetInfo, vec2,
 };
+use jiff::civil::Time;
 
 use crate::Labels;
 
@@ -331,7 +331,7 @@ impl Widget for Drum<'_> {
 /// A time of day on drums: hours and minutes (and seconds), in 24 hours or 12 with AM / PM.
 pub struct TimeDrum<'a> {
     id_salt: IdSalt,
-    time: &'a mut NaiveTime,
+    time: &'a mut Time,
     seconds: bool,
     minute_step: usize,
     hour12: bool,
@@ -340,7 +340,7 @@ pub struct TimeDrum<'a> {
 }
 
 impl<'a> TimeDrum<'a> {
-    pub fn new(id_salt: impl egui::AsIdSalt, time: &'a mut NaiveTime) -> Self {
+    pub fn new(id_salt: impl egui::AsIdSalt, time: &'a mut Time) -> Self {
         Self {
             id_salt: IdSalt::new(id_salt),
             time,
@@ -405,11 +405,15 @@ impl Widget for TimeDrum<'_> {
             visible_rows,
         } = self;
         let labels = labels.unwrap_or_default();
-        let (h12, pm) = to_12h(time.hour());
-        let mut hour = if hour12 { h12 } else { time.hour() } as i32;
+        let (h12, pm) = to_12h(time.hour() as u32);
+        let mut hour = if hour12 {
+            h12 as i32
+        } else {
+            i32::from(time.hour())
+        };
         let mut pm = i32::from(pm);
-        let mut minute = time.minute() as i32;
-        let mut second = time.second() as i32;
+        let mut minute = i32::from(time.minute());
+        let mut second = i32::from(time.second());
         let two = |v: i32| format!("{v:02}");
 
         let inner = ui.horizontal(|ui| {
@@ -465,12 +469,8 @@ impl Widget for TimeDrum<'_> {
             } else {
                 hour as u32
             };
-            let s = if seconds {
-                second as u32
-            } else {
-                time.second()
-            };
-            if let Some(t) = NaiveTime::from_hms_opt(h, minute as u32, s) {
+            let s = if seconds { second as i8 } else { time.second() };
+            if let Ok(t) = Time::new(h as i8, minute as i8, s, 0) {
                 *time = t;
                 response.mark_changed();
             }
