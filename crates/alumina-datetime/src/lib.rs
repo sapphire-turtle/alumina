@@ -13,7 +13,7 @@
 //! Every word shown comes from [`Labels`] (English by default), passed in a
 //! [`CalendarConfig`] with the first day of the week and the other shared settings.
 //!
-//! Timestamps are [`chrono::NaiveDateTime`], local wall time; the app converts to and from a
+//! Timestamps are [`jiff::civil::DateTime`], local wall time; the app converts to and from a
 //! time zone.
 
 pub mod calc;
@@ -34,5 +34,5 @@ pub use picker::{
     TimePickerButton,
 };
 
-pub use chrono;
 pub use egui;
+pub use jiff;

@@ -53,14 +53,15 @@ let config = CalendarConfig::default().icons(icons);
 
 ## Timestamps
 
-Timestamps are `chrono::NaiveDateTime`, wall time: convert to and from a time zone in your
+Timestamps are `jiff::civil::DateTime`, wall time: convert to and from a time zone in your
 app.
 
 ## Versions
 
-| alumina-datetime | egui |
-|---|---|
-| 0.1 | 0.37 |
+| alumina-datetime | egui | dates and times |
+|---|---|---|
+| 0.1, 0.2 | 0.37 | chrono 0.4 |
+| 0.3 | 0.37 | jiff 1 |
 
 ## Licence
 

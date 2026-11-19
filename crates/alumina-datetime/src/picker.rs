@@ -1,7 +1,8 @@
 //! Buttons that open a calendar or drums in a popup, and the calendar beside drums.
 
-use chrono::{NaiveDate, NaiveDateTime, NaiveTime, Timelike as _};
 use egui::{Id, IdSalt, Popup, PopupCloseBehavior, Response, Ui, Widget};
+use jiff::ZonedDateTime;
+use jiff::civil::{Date, DateTime, Time};
 
 use crate::icons::small_button;
 use crate::{Calendar, CalendarConfig, CalendarState, DayBadge, Period, PeriodKind, TimeDrum};
@@ -73,7 +74,7 @@ fn popup(button: &Response, id: Id, add: impl FnOnce(&mut Ui) -> bool) {
 /// A button reading a date (or a dash); it opens a calendar and a text field to pick one.
 pub struct DatePickerButton<'a> {
     id_salt: IdSalt,
-    date: &'a mut Option<NaiveDate>,
+    date: &'a mut Option<Date>,
     config: CalendarConfig,
     format: String,
     clearable: bool,
@@ -81,7 +82,7 @@ pub struct DatePickerButton<'a> {
 }
 
 impl<'a> DatePickerButton<'a> {
-    pub fn new(id_salt: impl egui::AsIdSalt, date: &'a mut Option<NaiveDate>) -> Self {
+    pub fn new(id_salt: impl egui::AsIdSalt, date: &'a mut Option<Date>) -> Self {
         Self {
             id_salt: IdSalt::new(id_salt),
             date,
@@ -97,7 +98,7 @@ impl<'a> DatePickerButton<'a> {
         self
     }
 
-    /// How the button writes the date (chrono's `strftime`); `%Y-%m-%d` by default. The
+    /// How the button writes the date (jiff's `strftime`); `%Y-%m-%d` by default. The
     /// text field always reads and writes `%Y-%m-%d`.
     pub fn format(mut self, format: impl Into<String>) -> Self {
         self.format = format.into();
@@ -128,7 +129,7 @@ impl Widget for DatePickerButton<'_> {
         } = self;
         let text = date.map_or_else(
             || config.labels.none.clone(),
-            |d| d.format(&format).to_string(),
+            |d| d.strftime(&format).to_string(),
         );
         let mut button = ui.button(text);
         let id = ui.make_persistent_id(id_salt);
@@ -141,10 +142,13 @@ impl Widget for DatePickerButton<'_> {
                 ui,
                 id.with("field"),
                 &*date,
-                |d| d.map(|d| d.format(DAY_FMT).to_string()).unwrap_or_default(),
+                |d| {
+                    d.map(|d| d.strftime(DAY_FMT).to_string())
+                        .unwrap_or_default()
+                },
                 |s| match s.trim() {
                     "" if clearable => Some(None),
-                    s => NaiveDate::parse_from_str(s, DAY_FMT).ok().map(Some),
+                    s => Date::strptime(DAY_FMT, s).ok().map(Some),
                 },
                 "YYYY-MM-DD",
             );
@@ -250,8 +254,8 @@ impl Widget for PeriodPickerButton<'_> {
         {
             button = button.on_hover_text(format!(
                 "{} – {}",
-                p.first_day().format(DAY_FMT),
-                p.last_day().format(DAY_FMT)
+                p.first_day().strftime(DAY_FMT),
+                p.last_day().strftime(DAY_FMT)
             ));
         }
         let id = ui.make_persistent_id(id_salt);
@@ -345,7 +349,7 @@ impl TimeFormat {
     fn drum<'a>(
         &self,
         id: impl egui::AsIdSalt,
-        time: &'a mut NaiveTime,
+        time: &'a mut Time,
         config: &CalendarConfig,
     ) -> TimeDrum<'a> {
         TimeDrum::new(id, time)
@@ -356,14 +360,14 @@ impl TimeFormat {
     }
 }
 
-fn parse_time(s: &str) -> Option<NaiveTime> {
+fn parse_time(s: &str) -> Option<Time> {
     let s = s.trim();
     ["%H:%M:%S", "%H:%M", "%I:%M:%S %p", "%I:%M %p"]
         .iter()
-        .find_map(|f| NaiveTime::parse_from_str(s, f).ok())
+        .find_map(|f| Time::strptime(f, s).ok())
 }
 
-fn parse_datetime(s: &str) -> Option<NaiveDateTime> {
+fn parse_datetime(s: &str) -> Option<DateTime> {
     let s = s.trim();
     [
         "%Y-%m-%d %H:%M:%S",
@@ -372,19 +376,24 @@ fn parse_datetime(s: &str) -> Option<NaiveDateTime> {
         "%Y-%m-%dT%H:%M",
     ]
     .iter()
-    .find_map(|f| NaiveDateTime::parse_from_str(s, f).ok())
+    .find_map(|f| DateTime::strptime(f, s).ok())
+}
+
+/// `time` without its fraction of a second.
+fn whole_seconds(time: Time) -> Time {
+    time.with().subsec_nanosecond(0).build().unwrap_or(time)
 }
 
 /// A button reading a time; it opens drums and a text field to set it.
 pub struct TimePickerButton<'a> {
     id_salt: IdSalt,
-    time: &'a mut NaiveTime,
+    time: &'a mut Time,
     format: TimeFormat,
     config: CalendarConfig,
 }
 
 impl<'a> TimePickerButton<'a> {
-    pub fn new(id_salt: impl egui::AsIdSalt, time: &'a mut NaiveTime) -> Self {
+    pub fn new(id_salt: impl egui::AsIdSalt, time: &'a mut Time) -> Self {
         Self {
             id_salt: IdSalt::new(id_salt),
             time,
@@ -413,7 +422,7 @@ impl Widget for TimePickerButton<'_> {
             format,
             config,
         } = self;
-        let mut button = ui.button(time.format(format.pattern()).to_string());
+        let mut button = ui.button(time.strftime(format.pattern()).to_string());
         let id = ui.make_persistent_id(id_salt);
         let mut changed = false;
         popup(&button, id, |ui| {
@@ -421,7 +430,7 @@ impl Widget for TimePickerButton<'_> {
                 ui,
                 id.with("field"),
                 &*time,
-                |t| t.format(format.pattern()).to_string(),
+                |t| t.strftime(format.pattern()).to_string(),
                 parse_time,
                 format.pattern(),
             ) {
@@ -432,8 +441,7 @@ impl Widget for TimePickerButton<'_> {
                 .add(format.drum(id.with("drum"), time, &config))
                 .changed();
             if small_button(ui, &config.labels.now, &config.icons.now).clicked() {
-                let now = chrono::Local::now().time();
-                *time = now.with_nanosecond(0).unwrap_or(now);
+                *time = whole_seconds(ZonedDateTime::now().time());
                 changed = true;
             }
             false
@@ -449,7 +457,7 @@ impl Widget for TimePickerButton<'_> {
 /// the drums keep the day.
 pub struct DateTimePicker<'a> {
     id_salt: IdSalt,
-    datetime: &'a mut NaiveDateTime,
+    datetime: &'a mut DateTime,
     state: &'a mut CalendarState,
     format: TimeFormat,
     config: CalendarConfig,
@@ -458,7 +466,7 @@ pub struct DateTimePicker<'a> {
 impl<'a> DateTimePicker<'a> {
     pub fn new(
         id_salt: impl egui::AsIdSalt,
-        datetime: &'a mut NaiveDateTime,
+        datetime: &'a mut DateTime,
         state: &'a mut CalendarState,
     ) -> Self {
         Self {
@@ -497,7 +505,7 @@ impl Widget for DateTimePicker<'_> {
                 .config(config.clone())
                 .show(ui);
             if let Some(Period::Day(d)) = r.picked {
-                *datetime = d.and_time(datetime.time());
+                *datetime = d.to_datetime(datetime.time());
                 changed = true;
             }
             ui.separator();
@@ -510,7 +518,7 @@ impl Widget for DateTimePicker<'_> {
                     .add(format.drum((id_salt, "drum"), &mut time, &config))
                     .changed()
                 {
-                    *datetime = datetime.date().and_time(time);
+                    *datetime = datetime.date().to_datetime(time);
                     changed = true;
                 }
             });
@@ -541,13 +549,13 @@ fn side_by_side_width(config: &CalendarConfig, format: &TimeFormat) -> f32 {
 /// A button reading a timestamp; it opens [`DateTimePicker`] and a text field to set it.
 pub struct DateTimePickerButton<'a> {
     id_salt: IdSalt,
-    datetime: &'a mut NaiveDateTime,
+    datetime: &'a mut DateTime,
     format: TimeFormat,
     config: CalendarConfig,
 }
 
 impl<'a> DateTimePickerButton<'a> {
-    pub fn new(id_salt: impl egui::AsIdSalt, datetime: &'a mut NaiveDateTime) -> Self {
+    pub fn new(id_salt: impl egui::AsIdSalt, datetime: &'a mut DateTime) -> Self {
         Self {
             id_salt: IdSalt::new(id_salt),
             datetime,
@@ -576,7 +584,7 @@ impl Widget for DateTimePickerButton<'_> {
             config,
         } = self;
         let pattern = format!("{DAY_FMT} {}", format.pattern());
-        let mut button = ui.button(datetime.format(&pattern).to_string());
+        let mut button = ui.button(datetime.strftime(&pattern).to_string());
         let id = ui.make_persistent_id(id_salt);
         let opening = button.clicked();
         let mut changed = false;
@@ -591,7 +599,7 @@ impl Widget for DateTimePickerButton<'_> {
                 ui,
                 id.with("field"),
                 &*datetime,
-                |dt| dt.format(field_fmt).to_string(),
+                |dt| dt.strftime(field_fmt).to_string(),
                 parse_datetime,
                 "YYYY-MM-DD HH:MM",
             ) {
@@ -607,8 +615,8 @@ impl Widget for DateTimePickerButton<'_> {
                 )
                 .changed();
             if small_button(ui, &config.labels.now, &config.icons.now).clicked() {
-                let now = chrono::Local::now().naive_local();
-                *datetime = now.with_nanosecond(0).unwrap_or(now);
+                let now = ZonedDateTime::now().datetime();
+                *datetime = now.date().to_datetime(whole_seconds(now.time()));
                 state.cursor = datetime.date();
                 changed = true;
             }
@@ -628,7 +636,7 @@ mod tests {
 
     #[test]
     fn times_parse() {
-        let t = |h, m, s| NaiveTime::from_hms_opt(h, m, s).unwrap();
+        let t = |h, m, s| Time::new(h, m, s, 0).unwrap();
         assert_eq!(parse_time("09:30"), Some(t(9, 30, 0)));
         assert_eq!(parse_time(" 21:05:07 "), Some(t(21, 5, 7)));
         assert_eq!(parse_time("09:30 PM"), Some(t(21, 30, 0)));
@@ -642,18 +650,15 @@ mod tests {
             },
         ] {
             let x = t(13, 45, 12);
-            let shown = x.format(f.pattern()).to_string();
+            let shown = x.strftime(f.pattern()).to_string();
             let back = parse_time(&shown).unwrap();
-            assert_eq!(back.format(f.pattern()).to_string(), shown);
+            assert_eq!(back.strftime(f.pattern()).to_string(), shown);
         }
     }
 
     #[test]
     fn datetimes_parse() {
-        let dt = NaiveDate::from_ymd_opt(2026, 11, 3)
-            .unwrap()
-            .and_hms_opt(8, 0, 0)
-            .unwrap();
+        let dt = Date::new(2026, 11, 3).unwrap().at(8, 0, 0, 0);
         assert_eq!(parse_datetime("2026-11-03 08:00"), Some(dt));
         assert_eq!(parse_datetime("2026-11-03T08:00:00"), Some(dt));
         assert_eq!(parse_datetime("2026-11-03"), None);
