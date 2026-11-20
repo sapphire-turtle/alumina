@@ -783,9 +783,9 @@ dependencies = [
 
 [[package]]
 name = "corundum-framework-build"
-version = "0.11.0"
+version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b50885bb6d8525e88d9efaa98f0b234cf27121fb18bd6b4115429bb08ecbb5ba"
+checksum = "7d2a20a91748db36b0a0d05b03a1705caaf658fe9792cfd41c37e899dfb04581"
 dependencies = [
  "corundum-framework-platform",
  "png 0.18.1",
@@ -794,9 +794,9 @@ dependencies = [
 
 [[package]]
 name = "corundum-framework-platform"
-version = "0.11.0"
+version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "67e2eaeaec01723c010ef43b7d2ee153380cea07cb7652ef446cfed8ebb16d73"
+checksum = "6f856c775cb906c9c33ba8264007b85fce07c1150282786e36eedfc73fc7a2d5"
 dependencies = [
  "dirs",
  "jni",
