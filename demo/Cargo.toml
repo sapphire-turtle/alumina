@@ -32,6 +32,6 @@ tracing-subscriber = { workspace = true, features = ["fmt", "env-filter"] }
 [build-dependencies]
 # Embeds the icon in the Windows executable. The only corundum crate here, and only at
 # build time: nothing of it is linked into the demo.
-corundum-framework-build = "0.11.0"
+corundum-framework-build = "0.12.0"
 # Renders the window's icon. The version corundum-framework-build renders with.
 resvg = { version = "0.49", default-features = false }
