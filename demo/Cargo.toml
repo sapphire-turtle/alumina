@@ -34,4 +34,4 @@ tracing-subscriber = { workspace = true, features = ["fmt", "env-filter"] }
 # build time: nothing of it is linked into the demo.
 corundum-framework-build = "0.11.0"
 # Renders the window's icon. The version corundum-framework-build renders with.
-resvg = { version = "0.49", default-features = false }
+resvg = { version = "0.50", default-features = false }
